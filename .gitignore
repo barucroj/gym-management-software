@@ -87,3 +87,6 @@ logs/
 # Documentacion exportada: revisar y redactar antes de versionar.
 # Doc.pdf contenia credenciales en texto plano.
 docs/*.pdf
+
+# Contexto de trabajo local con Claude Code (no se versiona).
+CLAUDE.md

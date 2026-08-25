@@ -61,32 +61,48 @@ lo acoplaría al ciclo de vida de los workers HTTP y complicaría el escalado.
 
 ```
 gym-management-software/
+├── gym_core/                  # paquete compartido (API + notifier)
+│   ├── gym_core/
+│   │   ├── config.py          # settings comunes (DATABASE_URL, umbral de aviso)
+│   │   ├── db.py              # engine y sesion de base de datos
+│   │   ├── enums.py           # RolUsuario, EstatusSuscripcion
+│   │   ├── estatus.py         # regla de negocio del estatus de suscripcion
+│   │   └── models/            # modelos SQLModel (tablas)
+│   ├── alembic/               # migraciones de base de datos
+│   ├── alembic.ini
+│   └── pyproject.toml
 ├── backend/
 │   ├── app/
-│   │   ├── main.py            # instancia FastAPI y healthcheck
-│   │   ├── core/              # configuración y seguridad (JWT)
-│   │   ├── db/                # engine y sesión de base de datos
-│   │   ├── models/            # modelos SQLModel (tablas)
+│   │   ├── main.py            # instancia FastAPI y healthchecks
+│   │   ├── core/              # configuracion propia del API y seguridad (JWT)
 │   │   ├── schemas/           # DTOs Pydantic (entrada/salida)
-│   │   ├── routers/           # endpoints por módulo
-│   │   └── services/          # lógica de negocio
+│   │   ├── routers/           # endpoints por modulo
+│   │   └── services/          # logica de negocio
 │   ├── tests/                 # pytest
 │   ├── requirements.txt
 │   ├── requirements-dev.txt
 │   └── Dockerfile
 ├── notifier/
 │   ├── worker.py              # scheduler de notificaciones
-│   ├── requirements.txt
 │   └── Dockerfile
 ├── proxy/
 │   └── nginx.conf
 ├── frontend/                  # Angular (pendiente)
-├── docs/                      # documentación y alcance del proyecto
+├── docs/                      # documentacion (los PDF no se versionan)
 ├── docker-compose.yml
 ├── .env.example
-├── .gitignore
+├── .dockerignore
 └── README.md
 ```
+
+**Por que existe `gym_core`:** el API y el notifier necesitan los mismos modelos
+y la misma regla de vencimiento. Duplicarlos garantizaria que se desincronicen,
+y hacer que el notifier consulte al API por HTTP agregaria acoplamiento
+innecesario para una tarea que solo lee de la base. En su lugar viven en un
+paquete local que ambas imagenes instalan con `pip install ./gym_core`.
+
+Por eso el contexto de build de `backend/Dockerfile` y `notifier/Dockerfile`
+es la **raiz del repo**, no su propia carpeta.
 
 ---
 
@@ -137,7 +153,7 @@ Comandos útiles:
 docker compose ps               # estado de los servicios
 docker compose logs -f api      # logs del backend
 docker compose logs -f notifier # logs del worker
-docker compose run --rm tests   # correr la suite de tests
+docker compose run --build --rm tests   # correr la suite de tests
 docker compose down             # detener (conserva los datos)
 docker compose down -v          # detener y BORRAR el volumen de la base de datos
 ```
@@ -182,13 +198,44 @@ uvicorn app.main:app --reload
 
 Disponible en http://localhost:8000/docs
 
-### 3. Ejecutar los tests
+### 3. Migraciones de base de datos (Alembic)
+
+El esquema se versiona con Alembic. Las tablas **no** se crean solas al arrancar
+el API: hay que aplicar las migraciones.
+
+```bash
+docker compose run --build --rm migrate          # aplica las pendientes
+```
+
+Para crear una migracion nueva despues de modificar los modelos de `gym_core`:
+
+```bash
+docker compose run --build --rm   -v "$(pwd)/gym_core/alembic/versions:/code/gym_core/alembic/versions"   migrate alembic -c gym_core/alembic.ini revision --autogenerate -m "descripcion del cambio"
+```
+
+El volumen es necesario para que el archivo generado quede en tu disco y no
+solo dentro del contenedor. **Revisa siempre** el archivo resultante antes de
+commitearlo: autogenerate acierta casi siempre, pero no adivina renombres de
+columnas ni migraciones de datos.
+
+Otros comandos:
+
+```bash
+docker compose run --rm migrate alembic -c gym_core/alembic.ini current
+docker compose run --rm migrate alembic -c gym_core/alembic.ini history
+docker compose run --rm migrate alembic -c gym_core/alembic.ini downgrade -1
+```
+
+### 4. Ejecutar los tests
 
 **Con Docker (no requiere Python local):**
 
 ```bash
-docker compose run --rm tests
+docker compose run --build --rm tests
 ```
+
+> El `--build` importa: sin el, Docker reutiliza la imagen anterior y los
+> cambios recientes en `gym_core` o en los tests no se reflejan.
 
 El servicio `tests` usa el stage `dev` del Dockerfile del backend, que agrega
 `requirements-dev.txt` y la carpeta `tests/`. Esta bajo el profile `test`, asi que
@@ -223,6 +270,33 @@ Los mensajes de commit siguen [Conventional Commits](https://www.conventionalcom
 `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`.
 
 ---
+
+## Modelo de datos
+
+| Tabla | Descripcion |
+|---|---|
+| `usuarios` | Personal que opera el sistema (Admin / Recepcion) |
+| `miembros` | Miembros del gimnasio |
+| `planes` | Planes de membresia: duracion y precio |
+| `suscripciones` | Vigencia que un miembro compra sobre un plan |
+| `asistencias` | Registro de entrada de un miembro |
+
+**El estatus de una suscripcion no se guarda: se calcula.** Un campo `estatus`
+persistido quedaria obsoleto en cuanto pasara un dia sin correr un job de
+actualizacion. Se deriva siempre de `fecha_fin` contra la fecha actual
+(`gym_core.estatus.calcular_estatus`):
+
+| Estatus | Condicion |
+|---|---|
+| `vencida` | `fecha_fin` ya paso |
+| `por_vencer` | quedan `NOTIFIER_DAYS_BEFORE_EXPIRATION` dias o menos |
+| `activa` | queda mas tiempo que el umbral |
+
+El ultimo dia de vigencia cuenta como `por_vencer`, no como `vencida`.
+
+Las vigencias usan `date` y no `datetime`: son dias de calendario, y modelarlas
+con marcas de tiempo obliga a pelear con zonas horarias sin ganar nada. Las
+asistencias si usan `datetime` en UTC, porque ahi la hora si importa.
 
 ## Estado actual
 
