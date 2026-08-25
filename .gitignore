@@ -83,3 +83,7 @@ desktop.ini
 # ---------------------------------------------------------------
 *.log
 logs/
+
+# Documentacion exportada: revisar y redactar antes de versionar.
+# Doc.pdf contenia credenciales en texto plano.
+docs/*.pdf
