@@ -60,7 +60,7 @@ lo acoplaría al ciclo de vida de los workers HTTP y complicaría el escalado.
 ## Estructura del repositorio
 
 ```
-gym-managment-sofware/
+gym-management-software/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py            # instancia FastAPI y healthcheck
@@ -100,8 +100,8 @@ gym-managment-sofware/
 ### 1. Clonar y configurar variables de entorno
 
 ```bash
-git clone https://github.com/barucroj/gym-managment-sofware.git
-cd gym-managment-sofware
+git clone https://github.com/barucroj/gym-management-software.git
+cd gym-management-software
 ```
 
 Copiar la plantilla de variables de entorno:
