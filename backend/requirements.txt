@@ -1,8 +1,8 @@
+# Dependencias propias del API.
+# Los modelos y el acceso a datos llegan por el paquete local gym-core,
+# que el Dockerfile instala desde ./gym_core.
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
-sqlmodel==0.0.22
-psycopg[binary]==3.2.3
-pydantic-settings==2.7.0
 python-jose[cryptography]==3.3.0
 passlib==1.7.4
 bcrypt==4.0.1
