@@ -137,6 +137,7 @@ Comandos útiles:
 docker compose ps               # estado de los servicios
 docker compose logs -f api      # logs del backend
 docker compose logs -f notifier # logs del worker
+docker compose run --rm tests   # correr la suite de tests
 docker compose down             # detener (conserva los datos)
 docker compose down -v          # detener y BORRAR el volumen de la base de datos
 ```
@@ -182,6 +183,18 @@ uvicorn app.main:app --reload
 Disponible en http://localhost:8000/docs
 
 ### 3. Ejecutar los tests
+
+**Con Docker (no requiere Python local):**
+
+```bash
+docker compose run --rm tests
+```
+
+El servicio `tests` usa el stage `dev` del Dockerfile del backend, que agrega
+`requirements-dev.txt` y la carpeta `tests/`. Esta bajo el profile `test`, asi que
+**no** se levanta con `docker compose up`.
+
+**Con virtualenv local:**
 
 ```bash
 cd backend
