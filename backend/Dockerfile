@@ -1,6 +1,8 @@
-# ---------------------------------------------------------------
-# Stage base: imagen de runtime que se usa en ejecucion normal.
-# ---------------------------------------------------------------
+# Contexto de build: la RAIZ del repo (no ./backend), porque la imagen
+# necesita instalar el paquete compartido gym_core.
+#
+#   docker compose build api
+
 FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -8,11 +10,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /code
 
-COPY requirements.txt .
+# Paquete compartido primero: cambia menos seguido que el codigo del API,
+# asi la capa se reaprovecha entre builds.
+COPY gym_core/ ./gym_core/
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir ./gym_core
 
-COPY app ./app
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/app ./app
 
 EXPOSE 8000
 
@@ -20,13 +27,13 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # ---------------------------------------------------------------
 # Stage dev: agrega dependencias y suite de tests.
-# Se construye solo bajo demanda:  docker compose run --rm tests
+#   docker compose run --rm tests
 # ---------------------------------------------------------------
 FROM base AS dev
 
-COPY requirements-dev.txt .
+COPY backend/requirements-dev.txt .
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
-COPY tests ./tests
+COPY backend/tests ./tests
 
 CMD ["pytest", "-v"]
