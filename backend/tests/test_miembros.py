@@ -30,6 +30,22 @@ def test_apellidos_son_obligatorios(client_recepcion: TestClient) -> None:
     assert respuesta.status_code == 422
 
 
+def test_email_invalido_se_rechaza(client_recepcion: TestClient) -> None:
+    respuesta = client_recepcion.post("/api/v1/miembros/", json={**ALTA, "email": "arroba-faltante"})
+
+    assert respuesta.status_code == 422
+
+
+def test_el_miembro_puede_no_tener_email(client_recepcion: TestClient) -> None:
+    """Es opcional: no todos los miembros dejan correo."""
+    respuesta = client_recepcion.post(
+        "/api/v1/miembros/", json={"nombre": "Ana", "apellidos": "Torres"}
+    )
+
+    assert respuesta.status_code == 201
+    assert respuesta.json()["email"] is None
+
+
 def test_el_cliente_no_impone_fecha_de_registro_ni_estado(client_recepcion: TestClient) -> None:
     respuesta = client_recepcion.post(
         "/api/v1/miembros/", json={**ALTA, "fecha_registro": "2000-01-01", "activo": False}
@@ -85,3 +101,21 @@ def test_miembro_inexistente_devuelve_404(client_recepcion: TestClient) -> None:
     assert client_recepcion.get("/api/v1/miembros/404").status_code == 404
     assert client_recepcion.put("/api/v1/miembros/404", json={"nombre": "X"}).status_code == 404
     assert client_recepcion.delete("/api/v1/miembros/404").status_code == 404
+
+
+def test_el_email_se_normaliza_a_minusculas(client_recepcion: TestClient) -> None:
+    """Sin esto, Ana@correo.local y ana@correo.local serian distintos."""
+    respuesta = client_recepcion.post(
+        "/api/v1/miembros/", json={**ALTA, "email": "  Ana@Correo.Local  "}
+    )
+
+    assert respuesta.json()["email"] == "ana@correo.local"
+
+
+def test_un_dominio_interno_es_valido(client_recepcion: TestClient) -> None:
+    """El sistema corre en la red del gimnasio: .local es legitimo."""
+    respuesta = client_recepcion.post(
+        "/api/v1/miembros/", json={**ALTA, "email": "recepcion@gimnasio.local"}
+    )
+
+    assert respuesta.status_code == 201

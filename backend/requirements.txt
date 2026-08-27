@@ -4,6 +4,7 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-jose[cryptography]==3.3.0
-passlib==1.7.4
-bcrypt==4.0.1
+# bcrypt se usa directamente, sin passlib: passlib 1.7.4 depende del modulo
+# crypt, que Python elimino en 3.13, y no tiene version que no lo use.
+bcrypt==4.2.1
 python-multipart==0.0.20
