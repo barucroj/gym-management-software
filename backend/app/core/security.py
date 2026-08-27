@@ -1,31 +1,44 @@
 """Hashing de contrasenas y emision/verificacion de tokens JWT.
 
-Aislado en su propio modulo a proposito: los routers y el futuro login solo
-llaman a estas dos funciones, asi que cambiar de algoritmo mas adelante se
-hace en un unico lugar.
+Aislado en su propio modulo a proposito: el login y los routers solo llaman
+a estas funciones, asi que cambiar de algoritmo mas adelante se hace en un
+unico lugar.
 """
 
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
 
-# deprecated="auto" permite migrar de algoritmo sin invalidar los hashes ya
-# guardados: passlib los marca como obsoletos, no como invalidos, y los sigue
-# verificando hasta que el usuario cambie su contrasena.
-_contexto = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt ignora en silencio todo lo que pase de 72 bytes. Se recorta de forma
+# explicita para que el comportamiento no dependa de la version instalada:
+# algunas truncan sin avisar y otras lanzan error.
+_MAX_BYTES = 72
+
+
+def _codificar(password: str) -> bytes:
+    return password.encode("utf-8")[:_MAX_BYTES]
 
 
 def hash_password(password: str) -> str:
-    """Devuelve el hash bcrypt de una contrasena en claro."""
-    return _contexto.hash(password)
+    """Devuelve el hash bcrypt de una contrasena en claro.
+
+    Cada llamada genera una sal distinta, asi que dos usuarios con la misma
+    contrasena tienen hashes diferentes.
+    """
+    return bcrypt.hashpw(_codificar(password), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(password: str, hashed: str) -> bool:
     """Compara una contrasena en claro contra su hash."""
-    return _contexto.verify(password, hashed)
+    try:
+        return bcrypt.checkpw(_codificar(password), hashed.encode("utf-8"))
+    except ValueError:
+        # Hash con formato invalido (dato corrupto o migrado a mano): no es
+        # una credencial valida, pero tampoco debe tumbar la peticion.
+        return False
 
 
 def crear_token_acceso(usuario_id: int, rol: str, expira_en: timedelta | None = None) -> str:

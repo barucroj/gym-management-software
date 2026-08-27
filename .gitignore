@@ -51,13 +51,12 @@ docker-compose.override.yml
 pgdata/
 
 # ---------------------------------------------------------------
-# Angular / Node (frontend, se agrega después)
+# Frontend
 # ---------------------------------------------------------------
+# La interfaz es HTML y JavaScript sin framework: no hay paso de build ni
+# dependencias que instalar, asi que no hay nada generado que ignorar. Las
+# reglas de Node quedan por si mas adelante se suma alguna herramienta.
 node_modules/
-frontend/dist/
-frontend/.angular/
-frontend/tmp/
-frontend/out-tsc/
 npm-debug.log*
 yarn-error.log*
 .pnpm-debug.log*

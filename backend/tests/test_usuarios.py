@@ -79,6 +79,12 @@ def test_alta_sin_rol_queda_en_recepcion(client_admin: TestClient) -> None:
     assert respuesta.json()["rol"] == RolUsuario.RECEPCION.value
 
 
+def test_email_invalido_se_rechaza(client_admin: TestClient) -> None:
+    respuesta = client_admin.post("/api/v1/usuarios/", json={**ALTA, "email": "no-es-un-email"})
+
+    assert respuesta.status_code == 422
+
+
 def test_contrasena_corta_se_rechaza(client_admin: TestClient) -> None:
     respuesta = client_admin.post("/api/v1/usuarios/", json={**ALTA, "password": "corta"})
 

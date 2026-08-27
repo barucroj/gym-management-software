@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 
+from sqlalchemy import Column, DateTime
 from sqlmodel import Field, SQLModel
 
 from gym_core.enums import RolUsuario
@@ -20,4 +21,7 @@ class Usuario(SQLModel, table=True):
     hashed_password: str = Field(max_length=255)
     rol: RolUsuario = Field(default=RolUsuario.RECEPCION)
     activo: bool = Field(default=True)
-    creado_en: datetime = Field(default_factory=_ahora)
+    creado_en: datetime = Field(
+        default_factory=_ahora,
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )

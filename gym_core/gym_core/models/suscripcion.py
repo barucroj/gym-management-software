@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from sqlalchemy import Column, DateTime
 from sqlmodel import Field, Relationship, SQLModel
 
 from gym_core.enums import EstatusSuscripcion
@@ -33,7 +34,10 @@ class Suscripcion(SQLModel, table=True):
     # Se guarda el precio del momento de la compra: si el plan sube de precio
     # despues, el historial de cobros no debe cambiar.
     precio_pagado: Decimal = Field(max_digits=10, decimal_places=2, ge=0)
-    creada_en: datetime = Field(default_factory=_ahora)
+    creada_en: datetime = Field(
+        default_factory=_ahora,
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
 
     miembro: "Miembro" = Relationship(back_populates="suscripciones")
     plan: "Plan" = Relationship(back_populates="suscripciones")
