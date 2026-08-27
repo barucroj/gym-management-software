@@ -65,6 +65,26 @@ async function apiFetch(endpoint, method = "GET", body = null) {
     throw new Error("No tienes permisos para esta acción");
   }
   if (response.status === 204) return null;
-  if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
+  if (!response.ok) throw new Error(await mensajeDeError(response));
   return response.json();
+}
+
+/**
+ * El API explica cada rechazo en "detail": un texto en los errores de negocio
+ * (409, 422 propios) y una lista de campos en los de validacion de pydantic.
+ * Mostrarlo es mucho mas util que un "Error 409: Conflict".
+ */
+async function mensajeDeError(response) {
+  try {
+    const cuerpo = await response.json();
+    if (typeof cuerpo.detail === "string") return cuerpo.detail;
+    if (Array.isArray(cuerpo.detail)) {
+      return cuerpo.detail
+        .map(e => `${e.loc?.slice(1).join(".") || "dato"}: ${e.msg}`)
+        .join(" · ");
+    }
+  } catch (err) {
+    // Respuesta sin cuerpo JSON: se cae al mensaje generico.
+  }
+  return `Error ${response.status}: ${response.statusText}`;
 }
