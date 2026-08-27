@@ -1,4 +1,7 @@
-const API_URL = "http://localhost:8000/api/v1";
+// Ruta relativa: el frontend y el API salen por el mismo Nginx, asi que el
+// navegador no cruza de origen y no interviene CORS. Ademas la app funciona
+// igual desde cualquier maquina de la red, no solo desde localhost.
+const API_URL = "/api/v1";
 const CLAVE_TOKEN = "gym_token";
 
 /**
