@@ -9,15 +9,10 @@ from sqlmodel import Session, select
 
 from app.core.security import hash_password
 from app.schemas.usuario import UsuarioCreate, UsuarioRead, UsuarioUpdate
-from gym_core.db import engine
+from gym_core.db import get_session
 from gym_core.models.usuario import Usuario
 
 router = APIRouter()
-
-
-def get_session():
-    with Session(engine) as session:
-        yield session
 
 
 def _email_ya_registrado(session: Session, email: str) -> bool:

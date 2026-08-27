@@ -4,17 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from app.schemas.asistencia import AsistenciaCreate, AsistenciaRead, AsistenciaUpdate
-from gym_core.db import engine
+from gym_core.db import get_session
 from gym_core.models.asistencia import Asistencia
 from gym_core.models.miembro import Miembro
 from gym_core.models.suscripcion import Suscripcion
 
 router = APIRouter()
-
-
-def get_session():
-    with Session(engine) as session:
-        yield session
 
 
 def _verificar_referencias(
