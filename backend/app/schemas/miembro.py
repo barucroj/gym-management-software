@@ -4,6 +4,8 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.tipos import Email
+
 
 class MiembroCreate(BaseModel):
     """Alta de miembro.
@@ -14,7 +16,7 @@ class MiembroCreate(BaseModel):
 
     nombre: str = Field(min_length=1, max_length=120)
     apellidos: str = Field(min_length=1, max_length=120)
-    email: str | None = Field(default=None, max_length=255)
+    email: Email | None = None
     telefono: str | None = Field(default=None, max_length=30)
     fecha_nacimiento: date | None = None
     notas: str | None = None
@@ -25,7 +27,7 @@ class MiembroUpdate(BaseModel):
 
     nombre: str | None = Field(default=None, min_length=1, max_length=120)
     apellidos: str | None = Field(default=None, min_length=1, max_length=120)
-    email: str | None = Field(default=None, max_length=255)
+    email: Email | None = None
     telefono: str | None = Field(default=None, max_length=30)
     fecha_nacimiento: date | None = None
     activo: bool | None = None

@@ -9,6 +9,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.tipos import Email
 from gym_core.enums import RolUsuario
 
 # bcrypt ignora en silencio todo lo que pase de 72 bytes, asi que se rechaza
@@ -24,7 +25,7 @@ class UsuarioCreate(BaseModel):
     """
 
     nombre: str = Field(min_length=1, max_length=120)
-    email: str = Field(min_length=3, max_length=255)
+    email: Email
     password: str = Field(min_length=_MIN_PASSWORD, max_length=_MAX_PASSWORD)
     rol: RolUsuario = RolUsuario.RECEPCION
     activo: bool = True
@@ -34,7 +35,7 @@ class UsuarioUpdate(BaseModel):
     """Actualizacion parcial: todo opcional, solo se aplica lo que llega."""
 
     nombre: str | None = Field(default=None, min_length=1, max_length=120)
-    email: str | None = Field(default=None, min_length=3, max_length=255)
+    email: Email | None = None
     password: str | None = Field(
         default=None, min_length=_MIN_PASSWORD, max_length=_MAX_PASSWORD
     )
