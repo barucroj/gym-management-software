@@ -27,14 +27,20 @@ app = FastAPI(
 
 
 # --- CONFIGURACIÓN DE CORS ---
-# Permite que el frontend se comunique con la API sin bloqueos del navegador.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Solo se activa si se declaran origenes en CORS_ORIGINS. En el despliegue
+# normal queda apagado: Nginx sirve el frontend y el API por el mismo origen,
+# asi que el navegador nunca hace una peticion entre origenes.
+#
+# Nunca "*" junto con allow_credentials: el estandar prohibe esa combinacion
+# para peticiones con credenciales, y el navegador las rechaza.
+if settings.cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 # --- REGISTRO DE ROUTERS ---
