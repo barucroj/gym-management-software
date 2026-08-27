@@ -1,14 +1,16 @@
 """Punto de entrada de la API de Gym Management Software."""
 
-from fastapi import FastAPI, Response, status
+from fastapi import Depends, FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.core.config import settings
+from app.core.deps import get_current_user, require_admin
 from gym_core.db import engine
 
 # Importar los routers de la carpeta app/routers/
 from app.routers import (
+    auth,
     usuarios,
     miembros,
     planes,
@@ -37,11 +39,39 @@ app.add_middleware(
 
 # --- REGISTRO DE ROUTERS ---
 # Esto registra cada módulo en Swagger UI con su prefijo y etiqueta correspondientes.
-app.include_router(usuarios.router, prefix="/api/v1/usuarios", tags=["Usuarios"])
-app.include_router(miembros.router, prefix="/api/v1/miembros", tags=["Miembros"])
-app.include_router(planes.router, prefix="/api/v1/planes", tags=["Planes"])
-app.include_router(suscripciones.router, prefix="/api/v1/suscripciones", tags=["Suscripciones"])
-app.include_router(asistencias.router, prefix="/api/v1/asistencias", tags=["Asistencias"])
+# La proteccion se declara aqui, al montar cada router, y no dentro de cada
+# endpoint: asi lo protegido es el default y abrir algo exige quitarlo de esta
+# lista, que es un cambio visible en el diff.
+protegido = [Depends(get_current_user)]
+solo_admin = [Depends(require_admin)]
+
+# auth queda abierto por definicion: es donde se consigue el token.
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
+
+# Administrar al personal del sistema es tarea de un administrador.
+app.include_router(
+    usuarios.router, prefix="/api/v1/usuarios", tags=["Usuarios"], dependencies=solo_admin
+)
+
+# El resto lo opera cualquier usuario autenticado, incluida recepcion.
+app.include_router(
+    miembros.router, prefix="/api/v1/miembros", tags=["Miembros"], dependencies=protegido
+)
+app.include_router(
+    planes.router, prefix="/api/v1/planes", tags=["Planes"], dependencies=protegido
+)
+app.include_router(
+    suscripciones.router,
+    prefix="/api/v1/suscripciones",
+    tags=["Suscripciones"],
+    dependencies=protegido,
+)
+app.include_router(
+    asistencias.router,
+    prefix="/api/v1/asistencias",
+    tags=["Asistencias"],
+    dependencies=protegido,
+)
 
 
 # --- HEALTHCHECKS ---
