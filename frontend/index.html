@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gym Management System</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+    <div class="container">
+      <a class="navbar-brand fw-bold" href="#"><i class="bi bi-activity"></i> Gym Software</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <ul class="nav nav-pills mb-3" id="mainTabs" role="tablist">
+      <li class="nav-item">
+        <button class="nav-link active" id="miembros-tab" data-bs-toggle="tab" data-bs-target="#miembros" type="button" onclick="cargarMiembros()">Miembros</button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" id="usuarios-tab" data-bs-toggle="tab" data-bs-target="#usuarios" type="button" onclick="cargarUsuarios()">Usuarios</button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" id="planes-tab" data-bs-toggle="tab" data-bs-target="#planes" type="button" onclick="cargarPlanes()">Planes</button>
+      </li>
+    </ul>
+
+    <div class="tab-content">
+      <!-- TAB MIEMBROS -->
+      <div class="tab-pane fade show active" id="miembros">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h3>Gestión de Miembros</h3>
+          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalMiembro"><i class="bi bi-plus-lg"></i> Nuevo Miembro</button>
+        </div>
+        <table class="table table-striped table-hover shadow-sm bg-white rounded">
+          <thead class="table-dark">
+            <tr>
+              <th>ID</th>
+              <th>Nombre</th>
+              <th>Email</th>
+              <th>Teléfono</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-miembros"></tbody>
+        </table>
+      </div>
+
+      <!-- TAB USUARIOS -->
+      <div class="tab-pane fade" id="usuarios">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h3>Usuarios del Sistema</h3>
+          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalUsuario"><i class="bi bi-plus-lg"></i> Nuevo Usuario</button>
+        </div>
+        <table class="table table-striped table-hover shadow-sm bg-white rounded">
+          <thead class="table-dark">
+            <tr>
+              <th>ID</th>
+              <th>Nombre de Usuario</th>
+              <th>Rol</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-usuarios"></tbody>
+        </table>
+      </div>
+
+      <!-- TAB PLANES -->
+      <div class="tab-pane fade" id="planes">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h3>Planes de Membresía</h3>
+        </div>
+        <table class="table table-striped table-hover shadow-sm bg-white rounded">
+          <thead class="table-dark">
+            <tr>
+              <th>ID</th>
+              <th>Nombre</th>
+              <th>Precio</th>
+              <th>Duración (Días)</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-planes"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL NUEVO MIEMBRO -->
+  <div class="modal fade" id="modalMiembro" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Registrar Miembro</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="form-miembro">
+            <div class="mb-3">
+              <label class="form-label">Nombre</label>
+              <input type="text" id="m-nombre" class="form-control" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Email</label>
+              <input type="email" id="m-email" class="form-control" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Teléfono</label>
+              <input type="text" id="m-telefono" class="form-control">
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Guardar</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
