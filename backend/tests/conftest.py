@@ -11,8 +11,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.security import hash_password
 from app.main import app
-from app.routers import asistencias, miembros, planes, suscripciones, usuarios
-from gym_core.db import get_session as get_session_core
+from gym_core.db import get_session
 from gym_core.enums import RolUsuario
 from gym_core.models.usuario import Usuario
 
@@ -38,13 +37,12 @@ def session_fixture():
 def client_fixture(session: Session):
     """Cliente HTTP sin autenticar, con la base en memoria enchufada.
 
-    Hay que sobrescribir seis dependencias en lugar de una porque cada router
-    define su propio get_session en vez de usar el de gym_core. Cuando se
-    unifiquen, este bucle desaparece.
+    Una sola linea alcanza porque todos los routers dependen del mismo
+    get_session de gym_core. FastAPI identifica cada dependencia por el objeto
+    funcion, asi que mientras haya una sola funcion hay una sola cosa que
+    sustituir.
     """
-    app.dependency_overrides[get_session_core] = lambda: session
-    for modulo in (usuarios, miembros, planes, suscripciones, asistencias):
-        app.dependency_overrides[modulo.get_session] = lambda: session
+    app.dependency_overrides[get_session] = lambda: session
 
     yield TestClient(app)
 
