@@ -17,5 +17,18 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
+    # Origenes autorizados a llamar al API desde un navegador, separados por
+    # coma. Vacio por defecto: sirviendo el frontend desde el mismo Nginx no
+    # se cruza de origen y CORS no interviene.
+    #
+    # Es un string y no una list[str] a proposito: pydantic-settings espera
+    # que una lista venga en JSON dentro de la variable de entorno, lo que
+    # obligaria a escribir CORS_ORIGINS=["http://..."] en el .env.
+    CORS_ORIGINS: str = ""
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [origen.strip() for origen in self.CORS_ORIGINS.split(",") if origen.strip()]
+
 
 settings = Settings()
