@@ -1,72 +1,163 @@
-// Pantallas de suscripciones y asistencias.
-//
-// Se apoyan en un catalogo en memoria porque el API devuelve ids, no nombres:
-// pedir el nombre de cada miembro fila por fila serian decenas de peticiones
-// para pintar una tabla.
+// Dashboard, planes y suscripciones, y recepcion.
 
-let catalogo = { miembros: [], planes: [], suscripciones: [] };
+// --- DASHBOARD ---
+let grafico = null;
 
-async function cargarCatalogos() {
-  const [miembros, planes, suscripciones] = await Promise.all([
-    apiFetch("/miembros/"),
-    apiFetch("/planes/"),
-    apiFetch("/suscripciones/")
-  ]);
-  catalogo = { miembros, planes, suscripciones };
-}
-
-function nombreMiembro(id) {
-  const miembro = catalogo.miembros.find(m => m.id === id);
-  return miembro ? miembro.nombre_completo : `#${id}`;
-}
-
-function nombrePlan(id) {
-  const plan = catalogo.planes.find(p => p.id === id);
-  return plan ? plan.nombre : `#${id}`;
-}
-
-/** Formatea una fecha ISO (2026-08-31) como 31/08/2026. */
-function fecha(iso) {
-  if (!iso) return "-";
-  const [anio, mes, dia] = iso.slice(0, 10).split("-");
-  return `${dia}/${mes}/${anio}`;
-}
-
-/** El API sella las horas en UTC, asi que se muestran tal cual llegan. */
-function fechaHora(iso) {
-  if (!iso) return "-";
-  return `${fecha(iso)} ${iso.slice(11, 16)}`;
-}
-
-const ETIQUETA_ESTATUS = {
-  activa: { texto: "Activa", clase: "bg-success" },
-  por_vencer: { texto: "Por vencer", clase: "bg-warning text-dark" },
-  vencida: { texto: "Vencida", clase: "bg-danger" }
-};
-
-function badgeEstatus(estatus) {
-  const etiqueta = ETIQUETA_ESTATUS[estatus] || { texto: estatus, clase: "bg-secondary" };
-  return `<span class="badge ${etiqueta.clase}">${esc(etiqueta.texto)}</span>`;
-}
-
-function llenarSelect(idSelect, opciones, textoVacio) {
-  const select = document.getElementById(idSelect);
-  select.innerHTML = opciones.length
-    ? opciones.map(o => `<option value="${o.valor}">${esc(o.texto)}</option>`).join("")
-    : `<option value="">${esc(textoVacio)}</option>`;
-}
-
-// --- SUSCRIPCIONES ---
-async function cargarSuscripciones() {
-  const tbody = document.getElementById("tabla-suscripciones");
-  cargando(tbody, 8);
+async function cargarDashboard() {
   try {
     await cargarCatalogos();
+    const asistencias = await apiFetch("/asistencias/");
+
+    pintarKpis();
+    pintarGrafico(asistencias);
+    pintarProximosVencimientos();
+  } catch (err) {
+    if (err instanceof ErrorNoAutenticado) salir();
+  }
+}
+
+function pintarKpis() {
+  const porEstatus = estatus => catalogo.suscripciones.filter(s => s.estatus === estatus).length;
+
+  document.getElementById("kpi-total-miembros").textContent = catalogo.miembros.length;
+  document.getElementById("kpi-activos").textContent = porEstatus("activa");
+  document.getElementById("kpi-vencer").textContent = porEstatus("por_vencer");
+  document.getElementById("kpi-vencidos").textContent = porEstatus("vencida");
+}
+
+const DIAS_CORTOS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
+/** Cuenta las asistencias reales de cada uno de los ultimos 7 dias. */
+function conteoUltimos7Dias(asistencias) {
+  const dias = [];
+  for (let i = 6; i >= 0; i--) {
+    const dia = new Date();
+    dia.setDate(dia.getDate() - i);
+    dias.push(dia.toISOString().slice(0, 10));
+  }
+
+  const conteo = Object.fromEntries(dias.map(dia => [dia, 0]));
+  asistencias.forEach(a => {
+    const dia = a.registrada_en.slice(0, 10);
+    if (dia in conteo) conteo[dia] += 1;
+  });
+
+  return {
+    etiquetas: dias.map(dia => {
+      const d = new Date(`${dia}T00:00:00`);
+      return `${DIAS_CORTOS[d.getDay()]} ${dia.slice(8, 10)}`;
+    }),
+    valores: dias.map(dia => conteo[dia])
+  };
+}
+
+function pintarGrafico(asistencias) {
+  const lienzo = document.getElementById("chartAsistencias");
+  // Chart.js llega por CDN: si el gimnasio esta sin internet no existe, y el
+  // resto del panel debe seguir funcionando igual.
+  if (!lienzo || typeof Chart === "undefined") return;
+
+  const { etiquetas, valores } = conteoUltimos7Dias(asistencias);
+
+  // El grafico anterior se destruye antes de redibujar: Chart.js no permite
+  // dos instancias sobre el mismo canvas y volver al dashboard lo recrearia.
+  if (grafico) grafico.destroy();
+
+  grafico = new Chart(lienzo, {
+    type: "line",
+    data: {
+      labels: etiquetas,
+      datasets: [{
+        label: "Asistencias",
+        data: valores,
+        borderColor: "#3b82f6",
+        backgroundColor: "rgba(59, 130, 246, 0.1)",
+        fill: true,
+        tension: 0.4
+      }]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: "#334155" } },
+        // Las asistencias son cuentas enteras: sin esto el eje muestra 0.5.
+        y: { grid: { color: "#334155" }, beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+}
+
+/** El objetivo declarado del sistema: avisar de lo que esta por vencer. */
+function pintarProximosVencimientos() {
+  const caja = document.getElementById("lista-por-vencer");
+  const porVencer = catalogo.suscripciones
+    .filter(s => s.estatus === "por_vencer")
+    .sort((a, b) => a.fecha_fin.localeCompare(b.fecha_fin));
+
+  if (porVencer.length === 0) {
+    caja.innerHTML = '<p class="text-muted small mb-0">Ninguna suscripción está por vencer.</p>';
+    return;
+  }
+
+  caja.innerHTML = porVencer.map(s => `
+    <div class="d-flex align-items-center mb-3">
+      ${avatar(nombreMiembro(s.miembro_id))}
+      <div class="flex-grow-1 overflow-hidden">
+        <div class="fw-semibold text-truncate">${esc(nombreMiembro(s.miembro_id))}</div>
+        <div class="text-muted small">vence el ${fecha(s.fecha_fin)}</div>
+      </div>
+      <span class="badge bg-warning bg-opacity-10 text-warning">${diasRestantes(s.fecha_fin)}d</span>
+    </div>
+  `).join("");
+}
+
+function diasRestantes(fechaFin) {
+  const fin = new Date(`${fechaFin}T00:00:00`);
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  return Math.round((fin - hoy) / 86400000);
+}
+
+// --- PLANES Y SUSCRIPCIONES ---
+async function cargarSuscripciones() {
+  const tbody = document.getElementById("tabla-suscripciones");
+  cargando(tbody, 6);
+  try {
+    await cargarCatalogos();
+    pintarPlanes();
     prepararFormularioSuscripcion();
     pintarSuscripciones();
   } catch (err) {
-    manejarError(err, tbody, 8, "Error al cargar suscripciones");
+    manejarError(err, tbody, 6, "Error al cargar suscripciones");
   }
+}
+
+function pintarPlanes() {
+  const contenedor = document.getElementById("contenedor-planes");
+  const planes = catalogo.planes.filter(p => p.activo);
+
+  if (planes.length === 0) {
+    contenedor.innerHTML =
+      '<div class="col-12 text-center text-muted py-4">Todavía no hay planes cargados.</div>';
+    return;
+  }
+
+  contenedor.innerHTML = planes.map(p => `
+    <div class="col-md-4">
+      <div class="kpi-card p-4 text-center h-100 d-flex flex-column justify-content-between">
+        <div>
+          <h4 class="fw-bold text-primary">${esc(p.nombre)}</h4>
+          <h2 class="my-3 fw-bold">$${esc(p.precio)}
+            <span class="fs-6 text-muted">/ ${p.duracion_dias} días</span>
+          </h2>
+          <p class="text-muted small">${esc(p.descripcion) || "Sin descripción."}</p>
+        </div>
+        <button class="btn btn-outline-primary w-100 mt-3" onclick="asignarPlan(${p.id})">
+          Asignar a Socio
+        </button>
+      </div>
+    </div>
+  `).join("");
 }
 
 /** Repinta desde el catalogo ya cargado: el filtro no vuelve a consultar. */
@@ -74,28 +165,27 @@ function pintarSuscripciones() {
   const tbody = document.getElementById("tabla-suscripciones");
   const filtro = document.getElementById("filtro-estatus").value;
 
-  avisarVencimientos();
-
   const filas = filtro
     ? catalogo.suscripciones.filter(s => s.estatus === filtro)
     : catalogo.suscripciones;
 
   if (filas.length === 0) {
-    vacio(tbody, 8, filtro ? "No hay suscripciones con ese estatus." : "Todavía no hay suscripciones.");
+    vacio(tbody, 6, filtro ? "No hay suscripciones con ese estatus." : "Todavía no hay suscripciones.");
     return;
   }
 
   tbody.innerHTML = filas.map(s => `
     <tr>
-      <td>${s.id}</td>
-      <td>${esc(nombreMiembro(s.miembro_id))}</td>
+      <td class="d-flex align-items-center">
+        ${avatar(nombreMiembro(s.miembro_id))}
+        <span class="fw-bold">${esc(nombreMiembro(s.miembro_id))}</span>
+      </td>
       <td>${esc(nombrePlan(s.plan_id))}</td>
-      <td>${fecha(s.fecha_inicio)}</td>
-      <td>${fecha(s.fecha_fin)}</td>
+      <td class="text-muted small">${fecha(s.fecha_inicio)} → ${fecha(s.fecha_fin)}</td>
       <td>${badgeEstatus(s.estatus)}</td>
       <td>$${esc(s.precio_pagado)}</td>
       <td>
-        <button class="btn btn-sm btn-danger" onclick="eliminarSuscripcion(${s.id})" title="Eliminar">
+        <button class="btn btn-sm btn-outline-danger" onclick="eliminarSuscripcion(${s.id})" title="Eliminar">
           <i class="bi bi-trash"></i>
         </button>
       </td>
@@ -103,49 +193,30 @@ function pintarSuscripciones() {
   `).join("");
 }
 
-/** El objetivo del sistema: avisar de lo que esta por vencer. */
-function avisarVencimientos() {
-  const aviso = document.getElementById("aviso-vencimientos");
-  const porVencer = catalogo.suscripciones.filter(s => s.estatus === "por_vencer");
-
-  if (porVencer.length === 0) {
-    aviso.classList.add("d-none");
-    return;
-  }
-
-  const nombres = porVencer
-    .map(s => `${esc(nombreMiembro(s.miembro_id))} (${fecha(s.fecha_fin)})`)
-    .join(", ");
-  aviso.innerHTML =
-    `<i class="bi bi-exclamation-triangle"></i> <strong>${porVencer.length}</strong> ` +
-    `suscripción(es) por vencer: ${nombres}`;
-  aviso.classList.remove("d-none");
-}
-
 function prepararFormularioSuscripcion() {
   llenarSelect(
     "s-miembro",
     catalogo.miembros.filter(m => m.activo).map(m => ({ valor: m.id, texto: m.nombre_completo })),
-    "No hay miembros activos"
+    "No hay socios activos"
   );
   llenarSelect(
     "s-plan",
-    catalogo.planes.filter(p => p.activo).map(p => ({ valor: p.id, texto: `${p.nombre} · $${p.precio}` })),
+    catalogo.planes
+      .filter(p => p.activo)
+      .map(p => ({ valor: p.id, texto: `${p.nombre} · $${p.precio}` })),
     "No hay planes activos"
   );
 
-  const hoy = new Date().toISOString().slice(0, 10);
-  document.getElementById("s-inicio").value = hoy;
+  document.getElementById("s-inicio").value = new Date().toISOString().slice(0, 10);
   proponerVigencia();
 }
 
 /**
- * Propone fecha de fin y precio a partir del plan elegido. El API igual exige
- * ambos datos: esto es una comodidad de la pantalla, no una regla de negocio.
+ * Propone fecha de fin y precio segun el plan elegido. El API igual exige los
+ * dos datos: esto es una comodidad de la pantalla, no una regla de negocio.
  */
 function proponerVigencia() {
-  const planId = Number(document.getElementById("s-plan").value);
-  const plan = catalogo.planes.find(p => p.id === planId);
+  const plan = catalogo.planes.find(p => p.id === Number(document.getElementById("s-plan").value));
   const inicio = document.getElementById("s-inicio").value;
   if (!plan || !inicio) return;
 
@@ -155,6 +226,14 @@ function proponerVigencia() {
   document.getElementById("s-precio").value = plan.precio;
 }
 
+/** Abre el alta con el plan ya elegido. Antes solo mostraba un aviso falso. */
+function asignarPlan(planId) {
+  prepararFormularioSuscripcion();
+  document.getElementById("s-plan").value = String(planId);
+  proponerVigencia();
+  new bootstrap.Modal(document.getElementById("modalSuscripcion")).show();
+}
+
 async function guardarSuscripcion(e) {
   e.preventDefault();
   const datos = {
@@ -162,6 +241,8 @@ async function guardarSuscripcion(e) {
     plan_id: Number(document.getElementById("s-plan").value),
     fecha_inicio: document.getElementById("s-inicio").value,
     fecha_fin: document.getElementById("s-fin").value,
+    // Se manda como texto: el precio es Decimal en el API y pasarlo por Number
+    // introduce el redondeo binario que justamente se quiere evitar.
     precio_pagado: document.getElementById("s-precio").value
   };
   try {
@@ -177,91 +258,133 @@ function eliminarSuscripcion(id) {
   eliminarRecurso("suscripciones", id, "¿Deseas eliminar esta suscripción?", cargarSuscripciones);
 }
 
-// --- ASISTENCIAS ---
-async function cargarAsistencias() {
-  const tbody = document.getElementById("tabla-asistencias");
-  cargando(tbody, 5);
+async function guardarPlan(e) {
+  e.preventDefault();
+  const datos = {
+    nombre: document.getElementById("p-nombre").value,
+    descripcion: document.getElementById("p-descripcion").value || null,
+    duracion_dias: Number(document.getElementById("p-duracion").value),
+    precio: document.getElementById("p-precio").value
+  };
   try {
-    await cargarCatalogos();
-    llenarSelect(
-      "a-miembro",
-      catalogo.miembros.filter(m => m.activo).map(m => ({ valor: m.id, texto: m.nombre_completo })),
-      "No hay miembros activos"
-    );
-    mostrarVigencia();
-
-    const asistencias = await apiFetch("/asistencias/");
-    if (asistencias.length === 0) return vacio(tbody, 5, "Todavía no hay entradas registradas.");
-
-    tbody.innerHTML = asistencias.map(a => `
-      <tr>
-        <td>${a.id}</td>
-        <td>${esc(nombreMiembro(a.miembro_id))}</td>
-        <td>${fechaHora(a.registrada_en)}</td>
-        <td>${a.suscripcion_id ? `#${a.suscripcion_id}` : '<span class="text-muted">sin vigencia</span>'}</td>
-        <td>
-          <button class="btn btn-sm btn-danger" onclick="eliminarAsistencia(${a.id})" title="Eliminar">
-            <i class="bi bi-trash"></i>
-          </button>
-        </td>
-      </tr>
-    `).join("");
+    await apiFetch("/planes/", "POST", datos);
+    cerrarModal("modalPlan", "form-plan", "p-error");
+    cargarSuscripciones();
   } catch (err) {
-    manejarError(err, tbody, 5, "Error al cargar asistencias");
+    mostrarErrorEnFormulario("p-error", err);
   }
 }
 
-/** Suscripcion no vencida del miembro, si la hay. */
-function vigenciaDe(miembroId) {
-  return (
-    catalogo.suscripciones
-      .filter(s => s.miembro_id === miembroId && s.estatus !== "vencida")
-      .sort((a, b) => b.fecha_fin.localeCompare(a.fecha_fin))[0] || null
-  );
+// --- RECEPCION / CHECK-IN ---
+async function prepararCheckin() {
+  document.getElementById("checkin-resultado").innerHTML = "";
+  document.getElementById("checkin-id").focus();
+  try {
+    await cargarCatalogos();
+  } catch (err) {
+    if (err instanceof ErrorNoAutenticado) salir();
+  }
 }
 
-function mostrarVigencia() {
-  const caja = document.getElementById("a-vigencia");
-  const miembroId = Number(document.getElementById("a-miembro").value);
-  if (!miembroId) {
-    caja.classList.add("d-none");
+/**
+ * Valida el acceso y, si corresponde, registra la entrada.
+ *
+ * Dos cosas que antes no ocurrian: el veredicto mira el estatus real de la
+ * suscripcion (antes bastaba con que el socio existiera) y la entrada queda
+ * registrada (antes la pantalla no escribia nada en ninguna parte).
+ */
+async function validarAcceso(e) {
+  e.preventDefault();
+  const id = Number(document.getElementById("checkin-id").value);
+  const caja = document.getElementById("checkin-resultado");
+  if (!id) return;
+
+  caja.innerHTML = '<div class="text-muted">Consultando...</div>';
+
+  let miembro;
+  try {
+    miembro = await apiFetch(`/miembros/${id}`);
+  } catch (err) {
+    if (err instanceof ErrorNoAutenticado) return salir();
+    caja.innerHTML = veredicto("danger", "x-circle-fill", "ACCESO DENEGADO", "Socio no encontrado");
     return;
   }
 
-  const vigente = vigenciaDe(miembroId);
-  if (vigente) {
-    caja.className = "alert alert-info py-2";
+  if (!miembro.activo) {
+    caja.innerHTML = veredicto("danger", "x-circle-fill", "ACCESO DENEGADO", "El socio está dado de baja");
+    return;
+  }
+
+  const vigente = vigenciaDe(miembro.id);
+  if (!vigente) {
     caja.innerHTML =
-      `Suscripción vigente hasta el <strong>${fecha(vigente.fecha_fin)}</strong> ` +
-      badgeEstatus(vigente.estatus);
-  } else {
-    // Se avisa, pero no se bloquea: el modelo admite registrar la entrada sin
-    // vigencia para no perder el dato.
-    caja.className = "alert alert-warning py-2";
-    caja.textContent = "Sin suscripción vigente. La entrada se registrará igual.";
+      veredicto("danger", "x-circle-fill", "ACCESO DENEGADO", "Sin suscripción vigente") +
+      botonRegistrarIgual(miembro.id);
+    return;
   }
-  caja.classList.remove("d-none");
-}
 
-async function guardarAsistencia(e) {
-  e.preventDefault();
-  const miembroId = Number(document.getElementById("a-miembro").value);
-  const vigente = vigenciaDe(miembroId);
-  const datos = {
-    miembro_id: miembroId,
-    // Se adjunta la vigencia del momento para que el historial conserve con
-    // que suscripcion entro, aunque despues se renueve o venza.
-    suscripcion_id: vigente ? vigente.id : null
-  };
   try {
-    await apiFetch("/asistencias/", "POST", datos);
-    cerrarModal("modalAsistencia", "form-asistencia", "a-error");
-    cargarAsistencias();
+    await apiFetch("/asistencias/", "POST", {
+      miembro_id: miembro.id,
+      suscripcion_id: vigente.id
+    });
   } catch (err) {
-    mostrarErrorEnFormulario("a-error", err);
+    if (err instanceof ErrorNoAutenticado) return salir();
+    caja.innerHTML = veredicto("warning", "exclamation-triangle-fill", "NO SE PUDO REGISTRAR", err.message);
+    return;
   }
+
+  const restantes = diasRestantes(vigente.fecha_fin);
+  const detalle =
+    vigente.estatus === "por_vencer"
+      ? `${miembro.nombre_completo} · vence en ${restantes} día(s)`
+      : `${miembro.nombre_completo} · vigente hasta ${fecha(vigente.fecha_fin)}`;
+
+  caja.innerHTML = veredicto(
+    vigente.estatus === "por_vencer" ? "warning" : "success",
+    "check-circle-fill",
+    "ACCESO PERMITIDO",
+    detalle
+  );
+  document.getElementById("form-checkin").reset();
 }
 
-function eliminarAsistencia(id) {
-  eliminarRecurso("asistencias", id, "¿Deseas eliminar este registro?", cargarAsistencias);
+function veredicto(color, icono, titulo, detalle) {
+  return `
+    <div class="alert alert-${color} d-flex align-items-center justify-content-center p-3 mb-2">
+      <i class="bi bi-${icono} fs-2 me-3"></i>
+      <div class="text-start">
+        <h5 class="mb-0">${esc(titulo)}</h5>
+        <small>${esc(detalle)}</small>
+      </div>
+    </div>`;
+}
+
+/**
+ * El modelo admite registrar una entrada sin suscripcion vigente para no
+ * perder el dato. Se ofrece como accion explicita, no automatica: el acceso
+ * se denego y quien atiende decide si igual deja pasar.
+ */
+function botonRegistrarIgual(miembroId) {
+  return `
+    <button class="btn btn-outline-secondary btn-sm" onclick="registrarEntradaSinVigencia(${miembroId})">
+      <i class="bi bi-pencil-square me-1"></i> Registrar la entrada de todos modos
+    </button>`;
+}
+
+async function registrarEntradaSinVigencia(miembroId) {
+  const caja = document.getElementById("checkin-resultado");
+  try {
+    await apiFetch("/asistencias/", "POST", { miembro_id: miembroId, suscripcion_id: null });
+    caja.innerHTML = veredicto(
+      "secondary",
+      "pencil-square",
+      "ENTRADA REGISTRADA",
+      "Queda anotada sin suscripción vigente"
+    );
+    document.getElementById("form-checkin").reset();
+  } catch (err) {
+    if (err instanceof ErrorNoAutenticado) return salir();
+    caja.innerHTML = veredicto("warning", "exclamation-triangle-fill", "NO SE PUDO REGISTRAR", err.message);
+  }
 }
