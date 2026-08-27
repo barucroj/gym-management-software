@@ -4,15 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from app.schemas.plan import PlanCreate, PlanRead, PlanUpdate
-from gym_core.db import engine
+from gym_core.db import get_session
 from gym_core.models.plan import Plan
 
 router = APIRouter()
-
-
-def get_session():
-    with Session(engine) as session:
-        yield session
 
 
 def _nombre_ya_usado(session: Session, nombre: str) -> bool:

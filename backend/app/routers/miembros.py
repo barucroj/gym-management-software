@@ -4,15 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from app.schemas.miembro import MiembroCreate, MiembroRead, MiembroUpdate
-from gym_core.db import engine
+from gym_core.db import get_session
 from gym_core.models.miembro import Miembro
 
 router = APIRouter()
-
-
-def get_session():
-    with Session(engine) as session:
-        yield session
 
 
 @router.get("/", response_model=list[MiembroRead])
