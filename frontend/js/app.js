@@ -1,5 +1,10 @@
-// --- SESION ---
+// Sesion, navegacion y utilidades compartidas.
+
 let usuarioActual = null;
+
+// El API devuelve ids, no nombres. El catalogo se carga una vez por pantalla
+// y se resuelve en memoria, en lugar de pedir el nombre de cada fila aparte.
+let catalogo = { miembros: [], planes: [], suscripciones: [] };
 
 document.addEventListener("DOMContentLoaded", iniciar);
 
@@ -10,7 +15,7 @@ async function iniciar() {
   document.getElementById("form-usuario").addEventListener("submit", guardarUsuario);
   document.getElementById("form-plan").addEventListener("submit", guardarPlan);
   document.getElementById("form-suscripcion").addEventListener("submit", guardarSuscripcion);
-  document.getElementById("form-asistencia").addEventListener("submit", guardarAsistencia);
+  document.getElementById("form-checkin").addEventListener("submit", validarAcceso);
 
   // Al cambiar plan o fecha de inicio se recalcula la vigencia propuesta.
   document.getElementById("s-plan").addEventListener("change", proponerVigencia);
@@ -65,31 +70,53 @@ function salir() {
 function mostrarLogin() {
   document.getElementById("pantalla-login").classList.remove("d-none");
   document.getElementById("pantalla-app").classList.add("d-none");
-  document.getElementById("barra-usuario").classList.remove("d-flex");
-  document.getElementById("barra-usuario").classList.add("d-none");
 }
 
 function mostrarApp() {
   document.getElementById("pantalla-login").classList.add("d-none");
   document.getElementById("pantalla-app").classList.remove("d-none");
-  document.getElementById("barra-usuario").classList.remove("d-none");
-  document.getElementById("barra-usuario").classList.add("d-flex");
-  document.getElementById("etiqueta-usuario").textContent =
-    `${usuarioActual.nombre} · ${usuarioActual.rol}`;
 
-  // La pestaña de usuarios solo se ofrece al administrador: al resto el API
-  // le responde 403, asi que mostrarla seria prometer algo que no funciona.
+  document.getElementById("avatar-usuario").textContent = iniciales(usuarioActual.nombre);
+  document.getElementById("nombre-usuario").textContent = usuarioActual.nombre;
+  document.getElementById("rol-usuario").textContent =
+    usuarioActual.rol === "admin" ? "Administrador" : "Recepción";
+
+  // La seccion de usuarios solo se ofrece al administrador: al resto el API le
+  // responde 403, asi que mostrarla seria prometer algo que no funciona.
   document
     .getElementById("item-usuarios")
     .classList.toggle("d-none", usuarioActual.rol !== "admin");
 
-  cargarMiembros();
+  switchTab("dashboard");
+}
+
+// --- NAVEGACION ---
+const SECCIONES = ["dashboard", "miembros", "suscripciones", "checkin", "usuarios"];
+
+function switchTab(seccion) {
+  SECCIONES.forEach(nombre => {
+    document.getElementById(`sec-${nombre}`).classList.toggle("d-none", nombre !== seccion);
+  });
+  document.querySelectorAll(".sidebar .nav-link").forEach(enlace => {
+    enlace.classList.toggle("active", enlace.dataset.seccion === seccion);
+  });
+
+  // El mapa se arma aqui adentro y no a nivel de modulo: pantallas.js se carga
+  // despues que este archivo, asi que sus funciones aun no existirian.
+  const cargadores = {
+    dashboard: cargarDashboard,
+    miembros: cargarMiembros,
+    suscripciones: cargarSuscripciones,
+    checkin: prepararCheckin,
+    usuarios: cargarUsuarios
+  };
+  cargadores[seccion]?.();
 }
 
 // --- UTILIDADES ---
 
 /**
- * Escapa el texto antes de interpolarlo en HTML. Sin esto, un miembro con
+ * Escapa el texto antes de interpolarlo en HTML. Sin esto, un socio con
  * comillas o etiquetas en el nombre rompe la tabla, y en el peor caso ejecuta
  * lo que le hayan puesto adentro.
  */
@@ -101,10 +128,56 @@ function esc(valor) {
   );
 }
 
+function iniciales(nombre) {
+  return String(nombre || "?")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(parte => parte[0] || "")
+    .join("")
+    .toUpperCase();
+}
+
+/** Avatar dibujado localmente: el nombre del socio no sale del gimnasio. */
+function avatar(nombre) {
+  return `<span class="avatar-iniciales me-3">${esc(iniciales(nombre))}</span>`;
+}
+
 function badgeEstado(activo) {
   return activo
-    ? '<span class="badge bg-success">Activo</span>'
-    : '<span class="badge bg-secondary">Inactivo</span>';
+    ? '<span class="badge bg-success bg-opacity-10 text-success px-3 py-2">Activo</span>'
+    : '<span class="badge bg-secondary bg-opacity-10 text-secondary px-3 py-2">Inactivo</span>';
+}
+
+const ETIQUETA_ESTATUS = {
+  activa: { texto: "Activa", clase: "bg-success bg-opacity-10 text-success" },
+  por_vencer: { texto: "Por vencer", clase: "bg-warning bg-opacity-10 text-warning" },
+  vencida: { texto: "Vencida", clase: "bg-danger bg-opacity-10 text-danger" }
+};
+
+function badgeEstatus(estatus) {
+  const etiqueta = ETIQUETA_ESTATUS[estatus] || {
+    texto: estatus,
+    clase: "bg-secondary bg-opacity-10 text-secondary"
+  };
+  return `<span class="badge ${etiqueta.clase} px-3 py-2">${esc(etiqueta.texto)}</span>`;
+}
+
+/** Formatea una fecha ISO (2026-08-31) como 31/08/2026. */
+function fecha(iso) {
+  if (!iso) return "-";
+  const [anio, mes, dia] = iso.slice(0, 10).split("-");
+  return `${dia}/${mes}/${anio}`;
+}
+
+function cargando(tbody, columnas) {
+  tbody.innerHTML =
+    `<tr><td colspan="${columnas}" class="text-center text-muted py-3">Cargando...</td></tr>`;
+}
+
+function vacio(tbody, columnas, mensaje) {
+  tbody.innerHTML =
+    `<tr><td colspan="${columnas}" class="text-center text-muted py-3">${esc(mensaje)}</td></tr>`;
 }
 
 /** Si el problema fue la sesion vuelve al login; si no, lo muestra. */
@@ -114,20 +187,9 @@ function manejarError(err, tbody, columnas, mensaje) {
     return;
   }
   tbody.innerHTML =
-    `<tr><td colspan="${columnas}" class="text-danger text-center">${esc(mensaje)}</td></tr>`;
+    `<tr><td colspan="${columnas}" class="text-danger text-center py-3">${esc(mensaje)}</td></tr>`;
 }
 
-function cargando(tbody, columnas) {
-  tbody.innerHTML =
-    `<tr><td colspan="${columnas}" class="text-center text-muted">Cargando...</td></tr>`;
-}
-
-function vacio(tbody, columnas, mensaje) {
-  tbody.innerHTML =
-    `<tr><td colspan="${columnas}" class="text-center text-muted">${esc(mensaje)}</td></tr>`;
-}
-
-/** Cierra el modal, limpia el formulario y oculta el error anterior. */
 function cerrarModal(idModal, idFormulario, idError) {
   bootstrap.Modal.getInstance(document.getElementById(idModal))?.hide();
   document.getElementById(idFormulario).reset();
@@ -156,30 +218,82 @@ async function eliminarRecurso(recurso, id, pregunta, recargar) {
   }
 }
 
+function llenarSelect(idSelect, opciones, textoVacio) {
+  const select = document.getElementById(idSelect);
+  select.innerHTML = opciones.length
+    ? opciones.map(o => `<option value="${o.valor}">${esc(o.texto)}</option>`).join("")
+    : `<option value="">${esc(textoVacio)}</option>`;
+}
+
+// --- CATALOGO COMPARTIDO ---
+async function cargarCatalogos() {
+  const [miembros, planes, suscripciones] = await Promise.all([
+    apiFetch("/miembros/"),
+    apiFetch("/planes/"),
+    apiFetch("/suscripciones/")
+  ]);
+  catalogo = { miembros, planes, suscripciones };
+}
+
+function nombreMiembro(id) {
+  const miembro = catalogo.miembros.find(m => m.id === id);
+  return miembro ? miembro.nombre_completo : `#${id}`;
+}
+
+function nombrePlan(id) {
+  const plan = catalogo.planes.find(p => p.id === id);
+  return plan ? plan.nombre : `#${id}`;
+}
+
+/** Suscripcion no vencida de un miembro, la de vigencia mas larga. */
+function vigenciaDe(miembroId) {
+  return (
+    catalogo.suscripciones
+      .filter(s => s.miembro_id === miembroId && s.estatus !== "vencida")
+      .sort((a, b) => b.fecha_fin.localeCompare(a.fecha_fin))[0] || null
+  );
+}
+
 // --- MIEMBROS ---
 async function cargarMiembros() {
-  const tbody = document.getElementById("tabla-miembros");
-  cargando(tbody, 6);
+  const tbody = document.getElementById("tabla-miembros-body");
+  cargando(tbody, 5);
   try {
-    const miembros = await apiFetch("/miembros/");
-    if (miembros.length === 0) return vacio(tbody, 6, "Todavía no hay miembros registrados.");
+    await cargarCatalogos();
+    if (catalogo.miembros.length === 0) {
+      return vacio(tbody, 5, "Todavía no hay socios registrados.");
+    }
 
-    tbody.innerHTML = miembros.map(m => `
+    tbody.innerHTML = catalogo.miembros.map(m => {
+      const vigente = vigenciaDe(m.id);
+      return `
       <tr>
-        <td>${m.id}</td>
-        <td>${esc(m.nombre_completo)}</td>
-        <td>${esc(m.email) || '-'}</td>
-        <td>${esc(m.telefono) || '-'}</td>
+        <td class="d-flex align-items-center">
+          ${avatar(m.nombre_completo)}
+          <div>
+            <div class="fw-bold">${esc(m.nombre_completo)}</div>
+            <div class="text-muted small">ID: ${m.id}</div>
+          </div>
+        </td>
+        <td>
+          <div>${esc(m.email) || '-'}</div>
+          <div class="text-muted small">${esc(m.telefono) || '-'}</div>
+        </td>
+        <td>
+          ${vigente
+            ? `${badgeEstatus(vigente.estatus)}<div class="text-muted small mt-1">hasta ${fecha(vigente.fecha_fin)}</div>`
+            : '<span class="text-muted small">sin suscripción</span>'}
+        </td>
         <td>${badgeEstado(m.activo)}</td>
         <td>
-          <button class="btn btn-sm btn-danger" onclick="eliminarMiembro(${m.id})" title="Eliminar">
+          <button class="btn btn-sm btn-outline-danger" onclick="eliminarMiembro(${m.id})" title="Eliminar">
             <i class="bi bi-trash"></i>
           </button>
         </td>
-      </tr>
-    `).join("");
+      </tr>`;
+    }).join("");
   } catch (err) {
-    manejarError(err, tbody, 6, "Error al cargar miembros");
+    manejarError(err, tbody, 5, "Error al cargar los socios");
   }
 }
 
@@ -195,7 +309,7 @@ async function guardarMiembro(e) {
   };
   try {
     await apiFetch("/miembros/", "POST", datos);
-    cerrarModal("modalMiembro", "form-miembro", "m-error");
+    cerrarModal("modalNuevoMiembro", "form-miembro", "m-error");
     cargarMiembros();
   } catch (err) {
     mostrarErrorEnFormulario("m-error", err);
@@ -203,7 +317,7 @@ async function guardarMiembro(e) {
 }
 
 function eliminarMiembro(id) {
-  eliminarRecurso("miembros", id, "¿Deseas eliminar este miembro?", cargarMiembros);
+  eliminarRecurso("miembros", id, "¿Deseas eliminar este socio?", cargarMiembros);
 }
 
 // --- USUARIOS ---
@@ -214,12 +328,15 @@ async function cargarUsuarios() {
     const usuarios = await apiFetch("/usuarios/");
     tbody.innerHTML = usuarios.map(u => `
       <tr>
-        <td>${u.id}</td>
-        <td>${esc(u.nombre)}</td>
+        <td class="d-flex align-items-center">
+          ${avatar(u.nombre)}
+          <span class="fw-bold">${esc(u.nombre)}</span>
+        </td>
         <td>${esc(u.email)}</td>
-        <td>${esc(u.rol)}</td>
+        <td>${u.rol === "admin" ? "Administrador" : "Recepción"}</td>
+        <td>${badgeEstado(u.activo)}</td>
         <td>
-          <button class="btn btn-sm btn-danger" onclick="eliminarUsuario(${u.id})" title="Eliminar">
+          <button class="btn btn-sm btn-outline-danger" onclick="eliminarUsuario(${u.id})" title="Eliminar">
             <i class="bi bi-trash"></i>
           </button>
         </td>
@@ -249,54 +366,4 @@ async function guardarUsuario(e) {
 
 function eliminarUsuario(id) {
   eliminarRecurso("usuarios", id, "¿Deseas eliminar este usuario?", cargarUsuarios);
-}
-
-// --- PLANES ---
-async function cargarPlanes() {
-  const tbody = document.getElementById("tabla-planes");
-  cargando(tbody, 6);
-  try {
-    const planes = await apiFetch("/planes/");
-    if (planes.length === 0) return vacio(tbody, 6, "Todavía no hay planes cargados.");
-
-    tbody.innerHTML = planes.map(p => `
-      <tr>
-        <td>${p.id}</td>
-        <td>${esc(p.nombre)}</td>
-        <td>$${esc(p.precio)}</td>
-        <td>${p.duracion_dias}</td>
-        <td>${badgeEstado(p.activo)}</td>
-        <td>
-          <button class="btn btn-sm btn-danger" onclick="eliminarPlan(${p.id})" title="Eliminar">
-            <i class="bi bi-trash"></i>
-          </button>
-        </td>
-      </tr>
-    `).join("");
-  } catch (err) {
-    manejarError(err, tbody, 6, "Error al cargar planes");
-  }
-}
-
-async function guardarPlan(e) {
-  e.preventDefault();
-  const datos = {
-    nombre: document.getElementById("p-nombre").value,
-    descripcion: document.getElementById("p-descripcion").value || null,
-    duracion_dias: Number(document.getElementById("p-duracion").value),
-    // Se manda como texto: el precio es Decimal en el API y pasar por Number
-    // introduce el redondeo binario que justamente se quiere evitar.
-    precio: document.getElementById("p-precio").value
-  };
-  try {
-    await apiFetch("/planes/", "POST", datos);
-    cerrarModal("modalPlan", "form-plan", "p-error");
-    cargarPlanes();
-  } catch (err) {
-    mostrarErrorEnFormulario("p-error", err);
-  }
-}
-
-function eliminarPlan(id) {
-  eliminarRecurso("planes", id, "¿Deseas eliminar este plan?", cargarPlanes);
 }

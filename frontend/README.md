@@ -26,8 +26,8 @@ primer administrador desde la consola (ver el README de la raíz).
 |---|---|
 | `index.html` | Estructura, pestañas y modales |
 | `js/api.js` | Sesión, token y llamadas HTTP al API |
-| `js/app.js` | Login, utilidades compartidas, miembros, usuarios y planes |
-| `js/pantallas.js` | Suscripciones y asistencias |
+| `js/app.js` | Sesion, navegacion, utilidades, miembros y usuarios |
+| `js/pantallas.js` | Dashboard, planes y suscripciones, recepcion |
 
 ## Cómo habla con el API
 
@@ -39,6 +39,17 @@ proxy y obligaría a reactivar CORS.
 El token se guarda en `localStorage` y se adjunta como
 `Authorization: Bearer <token>` en cada petición. Ante un `401`, `apiFetch`
 descarta el token y devuelve a la pantalla de login.
+
+## Dependencias externas en tiempo de ejecucion
+
+Bootstrap, sus iconos, Chart.js y la tipografia Inter se cargan desde CDN.
+**Si el gimnasio se queda sin internet, la interfaz se ve rota**: sin estilos,
+sin iconos y sin grafico. Conviene descargar esos archivos al repo y servirlos
+desde Nginx, que es la unica forma de que un sistema local sea de verdad local.
+
+Los avatares se dibujan en el navegador con las iniciales del socio. Antes
+venian de `ui-avatars.com`, lo que enviaba el nombre de cada persona a un
+servicio externo en cada carga de la tabla.
 
 ## Convenciones
 
