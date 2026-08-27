@@ -69,6 +69,7 @@
               <th>Nombre</th>
               <th>Email</th>
               <th>Teléfono</th>
+              <th>Estado</th>
               <th>Acciones</th>
             </tr>
           </thead>
@@ -86,7 +87,8 @@
           <thead class="table-dark">
             <tr>
               <th>ID</th>
-              <th>Nombre de Usuario</th>
+              <th>Nombre</th>
+              <th>Email</th>
               <th>Rol</th>
               <th>Acciones</th>
             </tr>
@@ -99,6 +101,7 @@
       <div class="tab-pane fade" id="planes">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h3>Planes de Membresía</h3>
+          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalPlan"><i class="bi bi-plus-lg"></i> Nuevo Plan</button>
         </div>
         <table class="table table-striped table-hover shadow-sm bg-white rounded">
           <thead class="table-dark">
@@ -107,6 +110,8 @@
               <th>Nombre</th>
               <th>Precio</th>
               <th>Duración (Días)</th>
+              <th>Estado</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody id="tabla-planes"></tbody>
@@ -125,18 +130,112 @@
         </div>
         <div class="modal-body">
           <form id="form-miembro">
-            <div class="mb-3">
-              <label class="form-label">Nombre</label>
-              <input type="text" id="m-nombre" class="form-control" required>
+            <div class="row">
+              <div class="col mb-3">
+                <label class="form-label">Nombre</label>
+                <input type="text" id="m-nombre" class="form-control" required>
+              </div>
+              <!-- apellidos es obligatorio en el modelo: sin este campo el
+                   alta fallaba con 422 y el formulario no daba pista alguna. -->
+              <div class="col mb-3">
+                <label class="form-label">Apellidos</label>
+                <input type="text" id="m-apellidos" class="form-control" required>
+              </div>
             </div>
             <div class="mb-3">
               <label class="form-label">Email</label>
-              <input type="email" id="m-email" class="form-control" required>
+              <input type="email" id="m-email" class="form-control">
+            </div>
+            <div class="row">
+              <div class="col mb-3">
+                <label class="form-label">Teléfono</label>
+                <input type="text" id="m-telefono" class="form-control">
+              </div>
+              <div class="col mb-3">
+                <label class="form-label">Fecha de nacimiento</label>
+                <input type="date" id="m-nacimiento" class="form-control">
+              </div>
             </div>
             <div class="mb-3">
-              <label class="form-label">Teléfono</label>
-              <input type="text" id="m-telefono" class="form-control">
+              <label class="form-label">Notas</label>
+              <textarea id="m-notas" class="form-control" rows="2"></textarea>
             </div>
+            <div class="alert alert-danger d-none py-2" id="m-error"></div>
+            <button type="submit" class="btn btn-primary w-100">Guardar</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL NUEVO USUARIO -->
+  <div class="modal fade" id="modalUsuario" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Registrar Usuario</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="form-usuario">
+            <div class="mb-3">
+              <label class="form-label">Nombre</label>
+              <input type="text" id="u-nombre" class="form-control" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Email</label>
+              <input type="email" id="u-email" class="form-control" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Contraseña</label>
+              <!-- minlength espeja la restriccion del schema del API -->
+              <input type="password" id="u-password" class="form-control" minlength="8" required>
+              <div class="form-text">Mínimo 8 caracteres.</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Rol</label>
+              <select id="u-rol" class="form-select">
+                <option value="recepcion" selected>Recepción</option>
+                <option value="admin">Administrador</option>
+              </select>
+            </div>
+            <div class="alert alert-danger d-none py-2" id="u-error"></div>
+            <button type="submit" class="btn btn-primary w-100">Guardar</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL NUEVO PLAN -->
+  <div class="modal fade" id="modalPlan" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Registrar Plan</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="form-plan">
+            <div class="mb-3">
+              <label class="form-label">Nombre</label>
+              <input type="text" id="p-nombre" class="form-control" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Descripción</label>
+              <textarea id="p-descripcion" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="row">
+              <div class="col mb-3">
+                <label class="form-label">Duración (días)</label>
+                <input type="number" id="p-duracion" class="form-control" min="1" required>
+              </div>
+              <div class="col mb-3">
+                <label class="form-label">Precio</label>
+                <input type="number" id="p-precio" class="form-control" min="0" step="0.01" required>
+              </div>
+            </div>
+            <div class="alert alert-danger d-none py-2" id="p-error"></div>
             <button type="submit" class="btn btn-primary w-100">Guardar</button>
           </form>
         </div>
