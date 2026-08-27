@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from sqlalchemy import Column, DateTime
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -21,7 +22,10 @@ class Asistencia(SQLModel, table=True):
 
     # Instante del check-in. A diferencia de las vigencias (que son fechas de
     # calendario), aqui interesa la hora, asi que se guarda como datetime UTC.
-    registrada_en: datetime = Field(default_factory=_ahora, index=True)
+    registrada_en: datetime = Field(
+        default_factory=_ahora,
+        sa_column=Column(DateTime(timezone=True), nullable=False, index=True),
+    )
 
     # Suscripcion vigente al momento del ingreso, si la habia. Es opcional
     # a proposito: permite registrar la entrada de alguien sin suscripcion
