@@ -90,3 +90,4 @@ docs/*.pdf
 
 # Contexto de trabajo local con Claude Code (no se versiona).
 CLAUDE.md
+_git_rules.md
