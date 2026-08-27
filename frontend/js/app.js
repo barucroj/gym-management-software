@@ -9,6 +9,12 @@ async function iniciar() {
   document.getElementById("form-miembro").addEventListener("submit", guardarMiembro);
   document.getElementById("form-usuario").addEventListener("submit", guardarUsuario);
   document.getElementById("form-plan").addEventListener("submit", guardarPlan);
+  document.getElementById("form-suscripcion").addEventListener("submit", guardarSuscripcion);
+  document.getElementById("form-asistencia").addEventListener("submit", guardarAsistencia);
+
+  // Al cambiar plan o fecha de inicio se recalcula la vigencia propuesta.
+  document.getElementById("s-plan").addEventListener("change", proponerVigencia);
+  document.getElementById("s-inicio").addEventListener("change", proponerVigencia);
 
   if (!leerToken()) {
     mostrarLogin();
