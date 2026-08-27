@@ -112,3 +112,13 @@ def test_nombre_de_plan_es_unico(session: Session) -> None:
     session.add(Plan(nombre="Anual", duracion_dias=365, precio=Decimal("4800")))
     with pytest.raises(IntegrityError):
         session.commit()
+
+
+@pytest.mark.parametrize(
+    ("modelo", "columna"),
+    [(Usuario, "creado_en"), (Suscripcion, "creada_en"), (Asistencia, "registrada_en")],
+)
+def test_las_marcas_de_tiempo_llevan_zona_horaria(modelo, columna: str) -> None:
+    """Sin timezone=True la columna guarda la hora sin contexto, el JSON sale
+    sin desplazamiento y cualquier cliente la interpreta como hora local."""
+    assert modelo.__table__.c[columna].type.timezone is True
