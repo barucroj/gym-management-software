@@ -12,15 +12,42 @@
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
     <div class="container">
       <a class="navbar-brand fw-bold" href="#"><i class="bi bi-activity"></i> Gym Software</a>
+      <div class="d-none align-items-center gap-3" id="barra-usuario">
+        <span class="text-white-50 small" id="etiqueta-usuario"></span>
+        <button class="btn btn-outline-light btn-sm" id="btn-salir">
+          <i class="bi bi-box-arrow-right"></i> Salir
+        </button>
+      </div>
     </div>
   </nav>
 
-  <div class="container">
+  <!-- PANTALLA DE LOGIN: lo unico visible mientras no haya sesion -->
+  <div class="container" id="pantalla-login" style="max-width: 420px;">
+    <div class="card shadow-sm mt-5">
+      <div class="card-body p-4">
+        <h4 class="card-title text-center mb-4">Iniciar sesión</h4>
+        <form id="form-login">
+          <div class="mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" id="login-email" class="form-control" required autofocus>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Contraseña</label>
+            <input type="password" id="login-password" class="form-control" required>
+          </div>
+          <div class="alert alert-danger d-none py-2" id="login-error"></div>
+          <button type="submit" class="btn btn-primary w-100" id="btn-entrar">Entrar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="container d-none" id="pantalla-app">
     <ul class="nav nav-pills mb-3" id="mainTabs" role="tablist">
       <li class="nav-item">
         <button class="nav-link active" id="miembros-tab" data-bs-toggle="tab" data-bs-target="#miembros" type="button" onclick="cargarMiembros()">Miembros</button>
       </li>
-      <li class="nav-item">
+      <li class="nav-item d-none" id="item-usuarios">
         <button class="nav-link" id="usuarios-tab" data-bs-toggle="tab" data-bs-target="#usuarios" type="button" onclick="cargarUsuarios()">Usuarios</button>
       </li>
       <li class="nav-item">
