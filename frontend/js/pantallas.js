@@ -1,76 +1,82 @@
 // Dashboard, planes y suscripciones, y recepcion.
 
 // --- DASHBOARD ---
-let grafico = null;
+
+// Chart.js llega por CDN. Si el gimnasio esta sin internet no existe, y el
+// resto del panel tiene que seguir funcionando igual.
+const COLOR_LINEA = "#3b82f6";
+const COLOR_REJILLA = "#334155";
+
+let graficoAsistencias = null;
+let graficoHorasPico = null;
 
 async function cargarDashboard() {
   try {
-    await cargarCatalogos();
-    const asistencias = await apiFetch("/asistencias/");
+    // Los KPIs y las series los cuenta la base. Antes se descargaba el padron
+    // entero para contarlo en el navegador, lo que ademas obligaba a mandar
+    // los datos de cada socio para poder mostrar un total.
+    //
+    // Los catalogos siguen haciendo falta para la lista de vencimientos, que
+    // necesita el nombre de cada socio.
+    const [resumen, porDia, porHora] = await Promise.all([
+      apiFetch("/estadisticas/resumen"),
+      apiFetch("/estadisticas/asistencias-por-dia?dias=7"),
+      apiFetch("/estadisticas/horas-pico?dias=30"),
+      cargarCatalogos()
+    ]);
 
-    pintarKpis();
-    pintarGrafico(asistencias);
+    pintarKpis(resumen);
+    pintarGraficoAsistencias(porDia);
+    pintarHorasPico(porHora);
     pintarProximosVencimientos();
   } catch (err) {
     if (err instanceof ErrorNoAutenticado) salir();
   }
 }
 
-function pintarKpis() {
-  const porEstatus = estatus => catalogo.suscripciones.filter(s => s.estatus === estatus).length;
-
-  document.getElementById("kpi-total-miembros").textContent = catalogo.miembros.length;
-  document.getElementById("kpi-activos").textContent = porEstatus("activa");
-  document.getElementById("kpi-vencer").textContent = porEstatus("por_vencer");
-  document.getElementById("kpi-vencidos").textContent = porEstatus("vencida");
+function pintarKpis(resumen) {
+  document.getElementById("kpi-total-miembros").textContent = resumen.total_socios;
+  document.getElementById("kpi-activos").textContent = resumen.suscripciones_activas;
+  document.getElementById("kpi-vencer").textContent = resumen.suscripciones_por_vencer;
+  document.getElementById("kpi-vencidos").textContent = resumen.suscripciones_vencidas;
+  document.getElementById("kpi-asistencias-hoy").textContent = resumen.asistencias_hoy;
+  document.getElementById("kpi-ingresos").textContent = `$${resumen.ingresos_del_mes}`;
 }
 
 const DIAS_CORTOS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
-/** Cuenta las asistencias reales de cada uno de los ultimos 7 dias. */
-function conteoUltimos7Dias(asistencias) {
-  const dias = [];
-  for (let i = 6; i >= 0; i--) {
-    const dia = new Date();
-    dia.setDate(dia.getDate() - i);
-    dias.push(dia.toISOString().slice(0, 10));
-  }
+function etiquetaDia(iso) {
+  const dia = new Date(`${iso}T00:00:00`);
+  return `${DIAS_CORTOS[dia.getDay()]} ${iso.slice(8, 10)}`;
+}
 
-  const conteo = Object.fromEntries(dias.map(dia => [dia, 0]));
-  asistencias.forEach(a => {
-    const dia = a.registrada_en.slice(0, 10);
-    if (dia in conteo) conteo[dia] += 1;
-  });
-
+/** Ejes comunes: las dos series son cuentas enteras. */
+function ejesDeConteo() {
   return {
-    etiquetas: dias.map(dia => {
-      const d = new Date(`${dia}T00:00:00`);
-      return `${DIAS_CORTOS[d.getDay()]} ${dia.slice(8, 10)}`;
-    }),
-    valores: dias.map(dia => conteo[dia])
+    x: { grid: { color: COLOR_REJILLA } },
+    y: { grid: { color: COLOR_REJILLA }, beginAtZero: true, ticks: { precision: 0 } }
   };
 }
 
-function pintarGrafico(asistencias) {
-  const lienzo = document.getElementById("chartAsistencias");
-  // Chart.js llega por CDN: si el gimnasio esta sin internet no existe, y el
-  // resto del panel debe seguir funcionando igual.
-  if (!lienzo || typeof Chart === "undefined") return;
+function dibujar(idLienzo, anterior, config) {
+  const lienzo = document.getElementById(idLienzo);
+  if (!lienzo || typeof Chart === "undefined") return null;
 
-  const { etiquetas, valores } = conteoUltimos7Dias(asistencias);
+  // Chart.js no admite dos instancias sobre el mismo canvas, y volver al
+  // dashboard lo recrearia.
+  if (anterior) anterior.destroy();
+  return new Chart(lienzo, config);
+}
 
-  // El grafico anterior se destruye antes de redibujar: Chart.js no permite
-  // dos instancias sobre el mismo canvas y volver al dashboard lo recrearia.
-  if (grafico) grafico.destroy();
-
-  grafico = new Chart(lienzo, {
+function pintarGraficoAsistencias(porDia) {
+  graficoAsistencias = dibujar("chartAsistencias", graficoAsistencias, {
     type: "line",
     data: {
-      labels: etiquetas,
+      labels: porDia.map(d => etiquetaDia(d.dia)),
       datasets: [{
         label: "Asistencias",
-        data: valores,
-        borderColor: "#3b82f6",
+        data: porDia.map(d => d.asistencias),
+        borderColor: COLOR_LINEA,
         backgroundColor: "rgba(59, 130, 246, 0.1)",
         fill: true,
         tension: 0.4
@@ -78,11 +84,41 @@ function pintarGrafico(asistencias) {
     },
     options: {
       plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { color: "#334155" } },
-        // Las asistencias son cuentas enteras: sin esto el eje muestra 0.5.
-        y: { grid: { color: "#334155" }, beginAtZero: true, ticks: { precision: 0 } }
-      }
+      scales: ejesDeConteo()
+    }
+  });
+}
+
+/**
+ * A que hora viene la gente. Sirve para decidir turnos y horarios de clase.
+ *
+ * El API devuelve las 24 franjas siempre, incluidas las de cero: un eje al que
+ * le faltan las horas vacias exagera los picos. Se destacan las tres horas mas
+ * concurridas, que es lo unico que se mira de este grafico.
+ */
+function pintarHorasPico(porHora) {
+  const maximos = [...porHora]
+    .sort((a, b) => b.asistencias - a.asistencias)
+    .slice(0, 3)
+    .filter(f => f.asistencias > 0)
+    .map(f => f.hora);
+
+  graficoHorasPico = dibujar("chartHorasPico", graficoHorasPico, {
+    type: "bar",
+    data: {
+      labels: porHora.map(f => `${String(f.hora).padStart(2, "0")}:00`),
+      datasets: [{
+        label: "Asistencias",
+        data: porHora.map(f => f.asistencias),
+        backgroundColor: porHora.map(f =>
+          maximos.includes(f.hora) ? COLOR_LINEA : "rgba(59, 130, 246, 0.25)"
+        ),
+        borderRadius: 4
+      }]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: ejesDeConteo()
     }
   });
 }

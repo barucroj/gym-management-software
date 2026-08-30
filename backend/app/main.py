@@ -16,6 +16,7 @@ from app.routers import (
     planes,
     suscripciones,
     asistencias,
+    estadisticas,
 )
 
 app = FastAPI(
@@ -76,6 +77,12 @@ app.include_router(
     asistencias.router,
     prefix="/api/v1/asistencias",
     tags=["Asistencias"],
+    dependencies=protegido,
+)
+app.include_router(
+    estadisticas.router,
+    prefix="/api/v1/estadisticas",
+    tags=["Estadisticas"],
     dependencies=protegido,
 )
 

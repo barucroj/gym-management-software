@@ -32,6 +32,9 @@ class MiembroUpdate(BaseModel):
     telefono: str | None = Field(default=None, max_length=30)
     fecha_nacimiento: date | None = None
     activo: bool | None = None
+    # Se guarda solo si la actualizacion tambien da de baja. La fecha la pone
+    # el API: es el dato del que depende el calculo de bajas por mes.
+    motivo_baja: str | None = Field(default=None, max_length=255)
     notas: str | None = None
 
 
@@ -80,4 +83,6 @@ class MiembroRead(BaseModel):
     fecha_nacimiento: date | None
     fecha_registro: date
     activo: bool
+    fecha_baja: date | None
+    motivo_baja: str | None
     notas: str | None

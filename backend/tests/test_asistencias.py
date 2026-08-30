@@ -5,11 +5,12 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from gym_core.models.miembro import Miembro
 from gym_core.models.plan import Plan
 from gym_core.models.suscripcion import Suscripcion
+from gym_core.models.usuario import Usuario
 
 
 @pytest.fixture(name="miembro_id")
@@ -109,3 +110,35 @@ def test_correccion_de_una_entrada_mal_cargada(
 def test_asistencia_inexistente_devuelve_404(client_recepcion: TestClient) -> None:
     assert client_recepcion.get("/api/v1/asistencias/404").status_code == 404
     assert client_recepcion.delete("/api/v1/asistencias/404").status_code == 404
+
+
+def test_el_check_in_anota_quien_lo_registro(
+    client_recepcion: TestClient, session: Session
+) -> None:
+    """Sale del token, no del cuerpo: es lo que hace del registro una prueba."""
+    miembro = Miembro(nombre="Ana", apellidos="Torres")
+    session.add(miembro)
+    session.commit()
+    session.refresh(miembro)
+
+    respuesta = client_recepcion.post("/api/v1/asistencias/", json={"miembro_id": miembro.id})
+
+    assert respuesta.status_code == 201, respuesta.text
+    usuario = session.exec(select(Usuario).where(Usuario.email == "recep@gym.local")).one()
+    assert respuesta.json()["usuario_id"] == usuario.id
+
+
+def test_el_cliente_no_puede_atribuir_la_entrada_a_otro(
+    client_recepcion: TestClient, session: Session
+) -> None:
+    miembro = Miembro(nombre="Ana", apellidos="Torres")
+    session.add(miembro)
+    session.commit()
+    session.refresh(miembro)
+
+    respuesta = client_recepcion.post(
+        "/api/v1/asistencias/", json={"miembro_id": miembro.id, "usuario_id": 999}
+    )
+
+    assert respuesta.status_code == 201
+    assert respuesta.json()["usuario_id"] != 999

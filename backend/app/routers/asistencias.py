@@ -3,8 +3,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
+from app.core.deps import get_current_user
 from app.schemas.asistencia import AsistenciaCreate, AsistenciaRead, AsistenciaUpdate
 from gym_core.db import get_session
+from gym_core.models.usuario import Usuario
 from gym_core.models.asistencia import Asistencia
 from gym_core.models.miembro import Miembro
 from gym_core.models.suscripcion import Suscripcion
@@ -43,12 +45,17 @@ def obtener_asistencia(asistencia_id: int, session: Session = Depends(get_sessio
 
 
 @router.post("/", response_model=AsistenciaRead, status_code=status.HTTP_201_CREATED)
-def registrar_asistencia(datos: AsistenciaCreate, session: Session = Depends(get_session)):
+def registrar_asistencia(
+    datos: AsistenciaCreate,
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_user),
+):
     _verificar_referencias(session, datos.miembro_id, datos.suscripcion_id)
 
-    # registrada_en no se toma del cliente: lo pone el modelo con la hora del
-    # servidor, que es lo unico que hace del registro una prueba.
-    asistencia = Asistencia(**datos.model_dump())
+    # Ni registrada_en ni usuario_id se toman del cliente: la hora la pone el
+    # modelo con la del servidor y el autor sale del token que ya viajaba en la
+    # peticion. Es lo unico que hace del registro una prueba de algo.
+    asistencia = Asistencia(**datos.model_dump(), usuario_id=usuario.id)
     session.add(asistencia)
     session.commit()
     session.refresh(asistencia)

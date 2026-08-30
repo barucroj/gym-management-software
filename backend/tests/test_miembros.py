@@ -119,3 +119,68 @@ def test_un_dominio_interno_es_valido(client_recepcion: TestClient) -> None:
     )
 
     assert respuesta.status_code == 201
+
+
+def test_dar_de_baja_deja_constancia_de_la_fecha(client_recepcion: TestClient) -> None:
+    """Sin la fecha solo se sabe cuantos hay de baja hoy, no cuantos se fueron."""
+    creado = client_recepcion.post("/api/v1/miembros/", json=ALTA).json()
+
+    respuesta = client_recepcion.put(
+        f"/api/v1/miembros/{creado['id']}",
+        json={"activo": False, "motivo_baja": "Se mudó de ciudad"},
+    )
+
+    cuerpo = respuesta.json()
+    assert cuerpo["activo"] is False
+    assert cuerpo["fecha_baja"] == date.today().isoformat()
+    assert cuerpo["motivo_baja"] == "Se mudó de ciudad"
+
+
+def test_el_alta_no_trae_fecha_de_baja(client_recepcion: TestClient) -> None:
+    cuerpo = client_recepcion.post("/api/v1/miembros/", json=ALTA).json()
+
+    assert cuerpo["fecha_baja"] is None
+    assert cuerpo["motivo_baja"] is None
+
+
+def test_reactivar_borra_la_baja_anterior(client_recepcion: TestClient) -> None:
+    creado = client_recepcion.post("/api/v1/miembros/", json=ALTA).json()
+    client_recepcion.put(f"/api/v1/miembros/{creado['id']}", json={"activo": False})
+
+    cuerpo = client_recepcion.put(
+        f"/api/v1/miembros/{creado['id']}", json={"activo": True}
+    ).json()
+
+    assert cuerpo["fecha_baja"] is None
+    assert cuerpo["motivo_baja"] is None
+
+
+def test_editar_a_un_socio_ya_de_baja_no_le_mueve_la_fecha(
+    client_recepcion: TestClient, session: Session
+) -> None:
+    """Si se corrige el telefono meses despues, la baja sigue siendo la de antes."""
+    creado = client_recepcion.post("/api/v1/miembros/", json=ALTA).json()
+    client_recepcion.put(f"/api/v1/miembros/{creado['id']}", json={"activo": False})
+
+    miembro = session.get(Miembro, creado["id"])
+    miembro.fecha_baja = date(2020, 1, 15)
+    session.add(miembro)
+    session.commit()
+
+    cuerpo = client_recepcion.put(
+        f"/api/v1/miembros/{creado['id']}", json={"telefono": "555-1234"}
+    ).json()
+
+    assert cuerpo["fecha_baja"] == "2020-01-15"
+
+
+def test_el_motivo_de_baja_no_se_guarda_si_el_socio_sigue_activo(
+    client_recepcion: TestClient,
+) -> None:
+    creado = client_recepcion.post("/api/v1/miembros/", json=ALTA).json()
+
+    cuerpo = client_recepcion.put(
+        f"/api/v1/miembros/{creado['id']}", json={"motivo_baja": "Sin motivo"}
+    ).json()
+
+    assert cuerpo["motivo_baja"] is None
