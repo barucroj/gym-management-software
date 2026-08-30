@@ -317,8 +317,11 @@ async function refrescarTablaMiembros() {
   const tbody = document.getElementById("tabla-miembros-body");
   const consulta = textoBuscado();
 
+  // Un id de un solo digito tambien busca: los primeros socios los tienen.
+  const buscable = consulta.length >= LONGITUD_MINIMA_BUSQUEDA || /^\d+$/.test(consulta);
+
   let miembros = catalogo.miembros;
-  if (consulta.length >= LONGITUD_MINIMA_BUSQUEDA) {
+  if (buscable) {
     const propia = ++ultimaBusqueda;
     const encontrados = await apiFetch(
       `/miembros/buscar?q=${encodeURIComponent(consulta)}&limite=50`
