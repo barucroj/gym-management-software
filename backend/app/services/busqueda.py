@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from sqlalchemy import String, func, or_, select, text
 from sqlmodel import Session
 
+from app.services.motor import exigir_postgresql
 from gym_core.models.miembro import Miembro
 
 LIMITE_POR_DEFECTO = 10
@@ -70,11 +71,7 @@ def buscar_miembros(
     if len(consulta) < LONGITUD_MINIMA:
         return []
 
-    dialecto = session.get_bind().dialect.name
-    if dialecto != "postgresql":
-        raise RuntimeError(
-            f"La busqueda de socios necesita PostgreSQL (pg_trgm); el motor es {dialecto!r}."
-        )
+    exigir_postgresql(session, "La busqueda de socios (pg_trgm)")
 
     # El umbral gobierna al operador <%. Se fija por transaccion (is_local) para
     # no alterar la sesion de conexiones que el pool reutiliza despues.
