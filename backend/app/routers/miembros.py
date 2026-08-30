@@ -10,6 +10,7 @@ from app.schemas.miembro import (
     MiembroUpdate,
 )
 from app.services.busqueda import LIMITE_POR_DEFECTO, buscar_miembros
+from app.services.tiempo import hoy_local
 from gym_core.db import get_session
 from gym_core.models.miembro import Miembro
 
@@ -67,13 +68,39 @@ def actualizar_miembro(
     if not miembro:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Miembro no encontrado")
 
-    for campo, valor in datos.model_dump(exclude_unset=True).items():
+    cambios = datos.model_dump(exclude_unset=True)
+    # motivo_baja no se asigna en el bucle: solo aplica si el cambio ademas da
+    # de baja, y esa decision la toma _sincronizar_baja.
+    motivo = cambios.pop("motivo_baja", None)
+    for campo, valor in cambios.items():
         setattr(miembro, campo, valor)
+    _sincronizar_baja(miembro, motivo)
 
     session.add(miembro)
     session.commit()
     session.refresh(miembro)
     return miembro
+
+
+def _sincronizar_baja(miembro: Miembro, motivo: str | None) -> None:
+    """Mantiene fecha_baja coherente con activo.
+
+    Es lo que hace que la columna sirva para algo: sin esto quedaria siempre
+    vacia y no habria forma de contar cuantos socios se van cada mes. La fecha
+    la pone el servidor, igual que las demas marcas de tiempo del sistema.
+    """
+    if miembro.activo:
+        # Volvio: la baja anterior deja de aplicar.
+        miembro.fecha_baja = None
+        miembro.motivo_baja = None
+        return
+
+    # Se conserva la fecha de la primera baja. Si alguien reedita el registro
+    # meses despues, la baja no debe mudarse al dia de la edicion.
+    if miembro.fecha_baja is None:
+        miembro.fecha_baja = hoy_local()
+    if motivo is not None:
+        miembro.motivo_baja = motivo
 
 
 @router.delete("/{miembro_id}", status_code=status.HTTP_204_NO_CONTENT)

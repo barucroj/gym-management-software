@@ -21,6 +21,10 @@ class SuscripcionCreate(BaseModel):
     fecha_inicio: date
     fecha_fin: date
     precio_pagado: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    # Suscripcion que esta renueva, si lo es. Sin este enlace una renovacion y
+    # una venta nueva se ven identicas y no hay forma de saber cuantos socios
+    # se quedan. El router verifica que sea del mismo miembro.
+    renovada_de_id: int | None = None
 
     @model_validator(mode="after")
     def _fin_no_puede_preceder_al_inicio(self) -> "SuscripcionCreate":
@@ -57,6 +61,7 @@ class SuscripcionRead(BaseModel):
     fecha_fin: date
     precio_pagado: Decimal
     creada_en: datetime
+    renovada_de_id: int | None
     # Derivado de fecha_fin, nunca persistido. Ver gym_core.estatus.
     estatus: EstatusSuscripcion
 

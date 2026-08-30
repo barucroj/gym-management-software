@@ -22,6 +22,11 @@ class Miembro(SQLModel, table=True):
     fecha_registro: date = Field(default_factory=date.today)
     # Baja logica: se conserva el historial de asistencias y suscripciones.
     activo: bool = Field(default=True)
+    # Cuando y por que se fue. activo solo dice cuantos hay de baja hoy; sin la
+    # fecha no se puede calcular cuantos se van cada mes. Las mantiene el API al
+    # cambiar activo, no el cliente.
+    fecha_baja: date | None = Field(default=None)
+    motivo_baja: str | None = Field(default=None, max_length=255)
     notas: str | None = Field(default=None)
 
     suscripciones: list["Suscripcion"] = Relationship(back_populates="miembro")

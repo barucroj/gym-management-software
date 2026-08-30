@@ -39,6 +39,16 @@ class Suscripcion(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
 
+    # Suscripcion que esta renueva, si es una renovacion. Sin este enlace una
+    # renovacion y una venta nueva se ven identicas, y no hay forma de saber
+    # cuantos socios se quedan.
+    #
+    # unique: una suscripcion se renueva una sola vez. Dos apuntando a la misma
+    # anterior serian una bifurcacion del historial.
+    renovada_de_id: int | None = Field(
+        default=None, foreign_key="suscripciones.id", unique=True
+    )
+
     miembro: "Miembro" = Relationship(back_populates="suscripciones")
     plan: "Plan" = Relationship(back_populates="suscripciones")
 

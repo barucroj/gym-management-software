@@ -126,3 +126,69 @@ def test_suscripcion_con_asistencias_no_se_borra(
 def test_suscripcion_inexistente_devuelve_404(client_recepcion: TestClient) -> None:
     assert client_recepcion.get("/api/v1/suscripciones/404").status_code == 404
     assert client_recepcion.delete("/api/v1/suscripciones/404").status_code == 404
+
+
+def _renovar(cliente: TestClient, anterior: dict, miembro_id: int, plan_id: int):
+    return cliente.post(
+        "/api/v1/suscripciones/",
+        json={**_alta(miembro_id, plan_id), "renovada_de_id": anterior["id"]},
+    )
+
+
+def test_una_renovacion_queda_enlazada_a_la_anterior(
+    client_recepcion: TestClient, miembro_y_plan
+) -> None:
+    """Sin el enlace, una renovacion y una venta nueva se ven identicas."""
+    miembro_id, plan_id = miembro_y_plan
+    anterior = client_recepcion.post("/api/v1/suscripciones/", json=_alta(*miembro_y_plan)).json()
+
+    respuesta = _renovar(client_recepcion, anterior, miembro_id, plan_id)
+
+    assert respuesta.status_code == 201, respuesta.text
+    assert respuesta.json()["renovada_de_id"] == anterior["id"]
+
+
+def test_una_venta_nueva_no_enlaza_nada(client_recepcion: TestClient, miembro_y_plan) -> None:
+    respuesta = client_recepcion.post("/api/v1/suscripciones/", json=_alta(*miembro_y_plan))
+
+    assert respuesta.json()["renovada_de_id"] is None
+
+
+def test_no_se_puede_renovar_una_suscripcion_inexistente(
+    client_recepcion: TestClient, miembro_y_plan
+) -> None:
+    respuesta = client_recepcion.post(
+        "/api/v1/suscripciones/", json={**_alta(*miembro_y_plan), "renovada_de_id": 9999}
+    )
+
+    assert respuesta.status_code == 422
+
+
+def test_no_se_puede_renovar_la_suscripcion_de_otro_socio(
+    client_recepcion: TestClient, miembro_y_plan, session: Session
+) -> None:
+    """Si se permitiera, la tasa de renovacion que se calcule seria ficcion."""
+    _, plan_id = miembro_y_plan
+    otro = Miembro(nombre="Luis", apellidos="Vera")
+    session.add(otro)
+    session.commit()
+    session.refresh(otro)
+    ajena = client_recepcion.post("/api/v1/suscripciones/", json=_alta(*miembro_y_plan)).json()
+
+    respuesta = _renovar(client_recepcion, ajena, otro.id, plan_id)
+
+    assert respuesta.status_code == 422
+    assert "otro miembro" in respuesta.json()["detail"]
+
+
+def test_una_suscripcion_no_se_renueva_dos_veces(
+    client_recepcion: TestClient, miembro_y_plan
+) -> None:
+    """Dos renovaciones de la misma serian una bifurcacion del historial."""
+    miembro_id, plan_id = miembro_y_plan
+    anterior = client_recepcion.post("/api/v1/suscripciones/", json=_alta(*miembro_y_plan)).json()
+    _renovar(client_recepcion, anterior, miembro_id, plan_id)
+
+    respuesta = _renovar(client_recepcion, anterior, miembro_id, plan_id)
+
+    assert respuesta.status_code == 409
