@@ -104,7 +104,9 @@ function pintarProximosVencimientos() {
       ${avatar(nombreMiembro(s.miembro_id))}
       <div class="flex-grow-1 overflow-hidden">
         <div class="fw-semibold text-truncate">${esc(nombreMiembro(s.miembro_id))}</div>
-        <div class="text-muted small">vence el ${fecha(s.fecha_fin)}</div>
+        <div class="text-muted small">
+          <span class="font-monospace">${idSocio(s.miembro_id)}</span> · vence el ${fecha(s.fecha_fin)}
+        </div>
       </div>
       <span class="badge bg-warning bg-opacity-10 text-warning">${diasRestantes(s.fecha_fin)}d</span>
     </div>
@@ -178,7 +180,10 @@ function pintarSuscripciones() {
     <tr>
       <td class="d-flex align-items-center">
         ${avatar(nombreMiembro(s.miembro_id))}
-        <span class="fw-bold">${esc(nombreMiembro(s.miembro_id))}</span>
+        <div>
+          <div class="fw-bold">${esc(nombreMiembro(s.miembro_id))}</div>
+          <div class="text-muted small font-monospace">${idSocio(s.miembro_id)}</div>
+        </div>
       </td>
       <td>${esc(nombrePlan(s.plan_id))}</td>
       <td class="text-muted small">${fecha(s.fecha_inicio)} → ${fecha(s.fecha_fin)}</td>
@@ -311,14 +316,24 @@ async function validarAcceso(e) {
   }
 
   if (!miembro.activo) {
-    caja.innerHTML = veredicto("danger", "x-circle-fill", "ACCESO DENEGADO", "El socio está dado de baja");
+    caja.innerHTML = veredicto(
+      "danger",
+      "x-circle-fill",
+      "ACCESO DENEGADO",
+      `${idSocio(miembro.id)} · ${miembro.nombre_completo} está dado de baja`
+    );
     return;
   }
 
   const vigente = vigenciaDe(miembro.id);
   if (!vigente) {
     caja.innerHTML =
-      veredicto("danger", "x-circle-fill", "ACCESO DENEGADO", "Sin suscripción vigente") +
+      veredicto(
+        "danger",
+        "x-circle-fill",
+        "ACCESO DENEGADO",
+        `${idSocio(miembro.id)} · ${miembro.nombre_completo} · sin suscripción vigente`
+      ) +
       botonRegistrarIgual(miembro.id);
     return;
   }
@@ -337,8 +352,8 @@ async function validarAcceso(e) {
   const restantes = diasRestantes(vigente.fecha_fin);
   const detalle =
     vigente.estatus === "por_vencer"
-      ? `${miembro.nombre_completo} · vence en ${restantes} día(s)`
-      : `${miembro.nombre_completo} · vigente hasta ${fecha(vigente.fecha_fin)}`;
+      ? `${idSocio(miembro.id)} · ${miembro.nombre_completo} · vence en ${restantes} día(s)`
+      : `${idSocio(miembro.id)} · ${miembro.nombre_completo} · vigente hasta ${fecha(vigente.fecha_fin)}`;
 
   caja.innerHTML = veredicto(
     vigente.estatus === "por_vencer" ? "warning" : "success",
@@ -380,7 +395,7 @@ async function registrarEntradaSinVigencia(miembroId) {
       "secondary",
       "pencil-square",
       "ENTRADA REGISTRADA",
-      "Queda anotada sin suscripción vigente"
+      `${idSocio(miembroId)} · queda anotada sin suscripción vigente`
     );
     document.getElementById("form-checkin").reset();
   } catch (err) {
