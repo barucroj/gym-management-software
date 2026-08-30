@@ -235,9 +235,21 @@ async function cargarCatalogos() {
   catalogo = { miembros, planes, suscripciones };
 }
 
+/**
+ * ID visible del socio, con el mismo formato en todas las pantallas.
+ *
+ * No es un adorno: es el numero que recepcion teclea en el check-in, asi que
+ * quien atiende tiene que poder leerlo desde cualquier lista sin ir a buscarlo
+ * a la seccion de Miembros.
+ */
+function idSocio(id) {
+  return `#${id}`;
+}
+
 function nombreMiembro(id) {
   const miembro = catalogo.miembros.find(m => m.id === id);
-  return miembro ? miembro.nombre_completo : `#${id}`;
+  // El id ya se pinta aparte con idSocio(): repetirlo aqui daria "#5 · #5".
+  return miembro ? miembro.nombre_completo : "socio no encontrado";
 }
 
 function nombrePlan(id) {
@@ -272,7 +284,7 @@ async function cargarMiembros() {
           ${avatar(m.nombre_completo)}
           <div>
             <div class="fw-bold">${esc(m.nombre_completo)}</div>
-            <div class="text-muted small">ID: ${m.id}</div>
+            <div class="text-muted small font-monospace">${idSocio(m.id)}</div>
           </div>
         </td>
         <td>
