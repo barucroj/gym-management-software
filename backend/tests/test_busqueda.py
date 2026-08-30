@@ -103,9 +103,27 @@ def test_la_busqueda_no_expone_las_notas_del_socio(client_pg_recepcion, padron) 
     assert "fecha_nacimiento" not in resultado
 
 
-def test_una_sola_letra_se_rechaza(client_pg_recepcion, padron) -> None:
-    """Con un caracter cualquier umbral devuelve medio padron."""
-    assert client_pg_recepcion.get(RUTA, params={"q": "a"}).status_code == 422
+def test_una_sola_letra_no_devuelve_nada(client_pg_recepcion, padron) -> None:
+    """Con un caracter cualquier umbral de parecido devuelve medio padron."""
+    assert buscar(client_pg_recepcion, "a") == []
+
+
+def test_un_id_de_un_solo_digito_se_encuentra(
+    client_pg_recepcion, session_pg: Session
+) -> None:
+    """El minimo de dos caracteres es para los nombres, no para los ids.
+
+    El id va puesto a mano: la secuencia de la base no se reinicia entre
+    pruebas, asi que dejarlo al azar haria que el test dependiera del orden.
+    """
+    session_pg.add(Miembro(id=7, nombre="Sara", apellidos="Iglesias"))
+    session_pg.commit()
+
+    assert [r["id"] for r in buscar(client_pg_recepcion, "7")] == [7]
+
+
+def test_un_id_inexistente_no_devuelve_nada(client_pg_recepcion, padron) -> None:
+    assert buscar(client_pg_recepcion, "99999") == []
 
 
 def test_buscar_no_se_confunde_con_el_id_en_la_ruta(client_pg_recepcion, padron) -> None:

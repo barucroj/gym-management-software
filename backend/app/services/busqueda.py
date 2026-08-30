@@ -25,7 +25,8 @@ LIMITE_POR_DEFECTO = 10
 # llenar la lista de nombres que no se parecen en nada.
 UMBRAL_POR_DEFECTO = 0.3
 
-# Por debajo de dos caracteres cualquier umbral devuelve medio padron.
+# Por debajo de dos caracteres cualquier umbral de parecido devuelve medio
+# padron. No aplica a los ids: "7" es una consulta exacta, no un prefijo.
 LONGITUD_MINIMA = 2
 
 
@@ -56,6 +57,16 @@ def buscar_miembros(
 ) -> list[ResultadoBusqueda]:
     """Devuelve los socios que mas se parecen a `consulta`, de mejor a peor."""
     consulta = consulta.strip()
+
+    # Un numero es un id de socio, no un nombre: es lo que recepcion tiene a
+    # mano en la lista de vencimientos y en el carnet. Se resuelve directo, en
+    # vez de dejar que compita por parecido con nombres que no tienen nada que
+    # ver, y antes del minimo de longitud: los primeros socios del gimnasio
+    # tienen ids de un solo digito.
+    if consulta.isdigit():
+        miembro = session.get(Miembro, int(consulta))
+        return [ResultadoBusqueda(miembro=miembro, puntaje=1.0)] if miembro else []
+
     if len(consulta) < LONGITUD_MINIMA:
         return []
 
@@ -64,15 +75,6 @@ def buscar_miembros(
         raise RuntimeError(
             f"La busqueda de socios necesita PostgreSQL (pg_trgm); el motor es {dialecto!r}."
         )
-
-    # Un numero es un id de socio, no un nombre: es lo que recepcion tiene a
-    # mano en la lista de vencimientos y en el carnet. Se resuelve directo en
-    # vez de dejar que compita por parecido con nombres que no tienen nada que
-    # ver.
-    if consulta.isdigit():
-        miembro = session.get(Miembro, int(consulta))
-        if miembro is not None:
-            return [ResultadoBusqueda(miembro=miembro, puntaje=1.0)]
 
     # El umbral gobierna al operador <%. Se fija por transaccion (is_local) para
     # no alterar la sesion de conexiones que el pool reutiliza despues.

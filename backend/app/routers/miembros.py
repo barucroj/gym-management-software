@@ -9,7 +9,7 @@ from app.schemas.miembro import (
     MiembroRead,
     MiembroUpdate,
 )
-from app.services.busqueda import LIMITE_POR_DEFECTO, LONGITUD_MINIMA, buscar_miembros
+from app.services.busqueda import LIMITE_POR_DEFECTO, buscar_miembros
 from gym_core.db import get_session
 from gym_core.models.miembro import Miembro
 
@@ -26,8 +26,10 @@ def listar_miembros(session: Session = Depends(get_session)):
 # "buscar" como un entero y responderia 422 en vez de buscar nada.
 @router.get("/buscar", response_model=list[MiembroBusquedaRead])
 def buscar_socios(
+    # min_length=1 y no LONGITUD_MINIMA: un id de un solo digito es una
+    # consulta legitima. El minimo para los nombres lo aplica el servicio.
     q: str = Query(
-        min_length=LONGITUD_MINIMA,
+        min_length=1,
         max_length=120,
         description="Nombre, apellido o id del socio. Tolera erratas y acentos.",
     ),
