@@ -34,4 +34,14 @@ class Asistencia(SQLModel, table=True):
         default=None, foreign_key="suscripciones.id", index=True
     )
 
+    # Quien atendio el check-in. Lo pone el API con el usuario del token, no el
+    # cliente: si viniera del cuerpo de la peticion, cualquiera podria anotar
+    # entradas a nombre de otro y la auditoria no valdria nada.
+    #
+    # Nullable porque las asistencias anteriores a esta columna se registraron
+    # cuando el dato no se pedia.
+    usuario_id: int | None = Field(
+        default=None, foreign_key="usuarios.id", index=True
+    )
+
     miembro: "Miembro" = Relationship(back_populates="asistencias")

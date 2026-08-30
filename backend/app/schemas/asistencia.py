@@ -18,6 +18,10 @@ class AsistenciaCreate(BaseModel):
     # para no perder el dato.
     suscripcion_id: int | None = None
 
+    # usuario_id tampoco se declara, por el mismo motivo que registrada_en: lo
+    # pone el API con el usuario del token. Si viniera del cliente, cualquiera
+    # podria anotar entradas a nombre de otro y la auditoria no valdria nada.
+
 
 class AsistenciaUpdate(BaseModel):
     """Correccion de un registro ya hecho.
@@ -38,3 +42,5 @@ class AsistenciaRead(BaseModel):
     miembro_id: int
     registrada_en: datetime
     suscripcion_id: int | None
+    # Quien lo registro. None en las asistencias anteriores a esta columna.
+    usuario_id: int | None

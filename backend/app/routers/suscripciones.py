@@ -46,9 +46,44 @@ def obtener_suscripcion(suscripcion_id: int, session: Session = Depends(get_sess
     return SuscripcionRead.desde(suscripcion)
 
 
+def _verificar_renovacion(session: Session, miembro_id: int, renovada_de_id: int | None) -> None:
+    """Comprueba que la suscripcion que se dice renovar exista y encaje.
+
+    Sin esta validacion el enlace podria apuntar a la suscripcion de otro
+    socio, y la tasa de renovacion que se calcule despues seria ficcion.
+    """
+    if renovada_de_id is None:
+        return
+
+    anterior = session.get(Suscripcion, renovada_de_id)
+    if anterior is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"No existe la suscripcion {renovada_de_id}",
+        )
+    if anterior.miembro_id != miembro_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La suscripcion que se renueva es de otro miembro",
+        )
+
+    # La base tiene un unique sobre renovada_de_id, pero llegar hasta el commit
+    # devolveria un 500. Un segundo intento de renovar lo mismo es un conflicto
+    # del cliente, no un error del servidor.
+    ya_renovada = session.exec(
+        select(Suscripcion).where(Suscripcion.renovada_de_id == renovada_de_id)
+    ).first()
+    if ya_renovada is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"La suscripcion {renovada_de_id} ya fue renovada por la {ya_renovada.id}",
+        )
+
+
 @router.post("/", response_model=SuscripcionRead, status_code=status.HTTP_201_CREATED)
 def crear_suscripcion(datos: SuscripcionCreate, session: Session = Depends(get_session)):
     _verificar_referencias(session, datos.miembro_id, datos.plan_id)
+    _verificar_renovacion(session, datos.miembro_id, datos.renovada_de_id)
 
     suscripcion = Suscripcion(**datos.model_dump())
     session.add(suscripcion)
