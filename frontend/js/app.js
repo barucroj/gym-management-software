@@ -12,6 +12,7 @@ async function iniciar() {
   document.getElementById("form-login").addEventListener("submit", entrar);
   document.getElementById("btn-salir").addEventListener("click", salir);
   document.getElementById("form-miembro").addEventListener("submit", guardarMiembro);
+  document.getElementById("buscar-socio").addEventListener("input", alEscribirBusqueda);
   document.getElementById("form-usuario").addEventListener("submit", guardarUsuario);
   document.getElementById("form-plan").addEventListener("submit", guardarPlan);
   document.getElementById("form-suscripcion").addEventListener("submit", guardarSuscripcion);
@@ -267,46 +268,109 @@ function vigenciaDe(miembroId) {
 }
 
 // --- MIEMBROS ---
+
+// El API no acepta consultas de menos de dos caracteres: con una letra
+// cualquier umbral de parecido devuelve medio padron.
+const LONGITUD_MINIMA_BUSQUEDA = 2;
+
+// Se espera a que deje de teclear en vez de consultar en cada letra.
+const ESPERA_BUSQUEDA_MS = 250;
+
+let temporizadorBusqueda = null;
+
+// Las respuestas pueden llegar desordenadas: la de "men" despues de la de
+// "mendoza". El contador deja pintar solo a la ultima que se pidio.
+let ultimaBusqueda = 0;
+
+function textoBuscado() {
+  return document.getElementById("buscar-socio").value.trim();
+}
+
+function alEscribirBusqueda() {
+  clearTimeout(temporizadorBusqueda);
+  temporizadorBusqueda = setTimeout(() => {
+    refrescarTablaMiembros().catch(err =>
+      manejarError(err, document.getElementById("tabla-miembros-body"), 5, "Error al buscar")
+    );
+  }, ESPERA_BUSQUEDA_MS);
+}
+
 async function cargarMiembros() {
   const tbody = document.getElementById("tabla-miembros-body");
   cargando(tbody, 5);
   try {
     await cargarCatalogos();
-    if (catalogo.miembros.length === 0) {
-      return vacio(tbody, 5, "Todavía no hay socios registrados.");
-    }
-
-    tbody.innerHTML = catalogo.miembros.map(m => {
-      const vigente = vigenciaDe(m.id);
-      return `
-      <tr>
-        <td class="d-flex align-items-center">
-          ${avatar(m.nombre_completo)}
-          <div>
-            <div class="fw-bold">${esc(m.nombre_completo)}</div>
-            <div class="text-muted small font-monospace">${idSocio(m.id)}</div>
-          </div>
-        </td>
-        <td>
-          <div>${esc(m.email) || '-'}</div>
-          <div class="text-muted small">${esc(m.telefono) || '-'}</div>
-        </td>
-        <td>
-          ${vigente
-            ? `${badgeEstatus(vigente.estatus)}<div class="text-muted small mt-1">hasta ${fecha(vigente.fecha_fin)}</div>`
-            : '<span class="text-muted small">sin suscripción</span>'}
-        </td>
-        <td>${badgeEstado(m.activo)}</td>
-        <td>
-          <button class="btn btn-sm btn-outline-danger" onclick="eliminarMiembro(${m.id})" title="Eliminar">
-            <i class="bi bi-trash"></i>
-          </button>
-        </td>
-      </tr>`;
-    }).join("");
+    await refrescarTablaMiembros();
   } catch (err) {
     manejarError(err, tbody, 5, "Error al cargar los socios");
   }
+}
+
+/**
+ * Repinta la tabla segun lo que haya escrito en el buscador.
+ *
+ * No recarga los catalogos: el filtrado por parecido lo resuelve PostgreSQL,
+ * pero la vigencia de cada fila sale de las suscripciones que ya estan en
+ * memoria, y volver a bajarlas en cada tecla no aportaria nada.
+ */
+async function refrescarTablaMiembros() {
+  const tbody = document.getElementById("tabla-miembros-body");
+  const consulta = textoBuscado();
+
+  let miembros = catalogo.miembros;
+  if (consulta.length >= LONGITUD_MINIMA_BUSQUEDA) {
+    const propia = ++ultimaBusqueda;
+    const encontrados = await apiFetch(
+      `/miembros/buscar?q=${encodeURIComponent(consulta)}&limite=50`
+    );
+    if (propia !== ultimaBusqueda) return;
+    miembros = encontrados;
+  }
+
+  pintarMiembros(miembros, consulta);
+}
+
+function pintarMiembros(miembros, consulta) {
+  const tbody = document.getElementById("tabla-miembros-body");
+
+  if (miembros.length === 0) {
+    return vacio(
+      tbody,
+      5,
+      consulta
+        ? `Ningún socio se parece a "${consulta}".`
+        : "Todavía no hay socios registrados."
+    );
+  }
+
+  tbody.innerHTML = miembros.map(m => {
+    const vigente = vigenciaDe(m.id);
+    return `
+    <tr>
+      <td class="d-flex align-items-center">
+        ${avatar(m.nombre_completo)}
+        <div>
+          <div class="fw-bold">${esc(m.nombre_completo)}</div>
+          <div class="text-muted small font-monospace">${idSocio(m.id)}</div>
+        </div>
+      </td>
+      <td>
+        <div>${esc(m.email) || '-'}</div>
+        <div class="text-muted small">${esc(m.telefono) || '-'}</div>
+      </td>
+      <td>
+        ${vigente
+          ? `${badgeEstatus(vigente.estatus)}<div class="text-muted small mt-1">hasta ${fecha(vigente.fecha_fin)}</div>`
+          : '<span class="text-muted small">sin suscripción</span>'}
+      </td>
+      <td>${badgeEstado(m.activo)}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-danger" onclick="eliminarMiembro(${m.id})" title="Eliminar">
+          <i class="bi bi-trash"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join("");
 }
 
 async function guardarMiembro(e) {
