@@ -17,10 +17,20 @@ async function iniciar() {
   document.getElementById("form-plan").addEventListener("submit", guardarPlan);
   document.getElementById("form-suscripcion").addEventListener("submit", guardarSuscripcion);
   document.getElementById("form-checkin").addEventListener("submit", validarAcceso);
+  document.getElementById("form-pase-dia")?.addEventListener("submit", registrarPaseDia);
 
-  // Al cambiar plan o fecha de inicio se recalcula la vigencia propuesta.
-  document.getElementById("s-plan").addEventListener("change", proponerVigencia);
-  document.getElementById("s-inicio").addEventListener("change", proponerVigencia);
+  // Búsqueda dinámica en tiempo real para Check-in
+  document.getElementById("checkin-id")?.addEventListener("input", alEscribirCheckin);
+
+  // Al cambiar socio, plan o fecha de inicio se recalcula la vigencia y acumulacion.
+  document.getElementById("s-miembro")?.addEventListener("change", proponerVigencia);
+  document.getElementById("s-plan")?.addEventListener("change", proponerVigencia);
+  document.getElementById("s-inicio")?.addEventListener("change", proponerVigencia);
+
+  // Restriccion estricta de teléfono a solo números de 10 dígitos
+  document.getElementById("m-telefono")?.addEventListener("input", function() {
+    this.value = this.value.replace(/\D/g, "").slice(0, 10);
+  });
 
   if (!leerToken()) {
     mostrarLogin();
@@ -88,8 +98,10 @@ function mostrarApp() {
     .getElementById("item-usuarios")
     .classList.toggle("d-none", usuarioActual.rol !== "admin");
 
-  switchTab("dashboard");
+  // En version Starter, iniciamos directamente en el modulo operativo de Miembros
+  switchTab("miembros");
 }
+
 
 // --- NAVEGACION ---
 const SECCIONES = ["dashboard", "miembros", "suscripciones", "checkin", "usuarios"];
@@ -368,9 +380,14 @@ function pintarMiembros(miembros, consulta) {
       </td>
       <td>${badgeEstado(m.activo)}</td>
       <td>
-        <button class="btn btn-sm btn-outline-danger" onclick="eliminarMiembro(${m.id})" title="Eliminar">
-          <i class="bi bi-trash"></i>
-        </button>
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-primary" onclick="abrirAsignarSuscripcionParaMiembro(${m.id})" title="Asignar o Renovar Plan">
+            <i class="bi bi-card-checklist"></i> Plan
+          </button>
+          <button class="btn btn-outline-danger" onclick="eliminarMiembro(${m.id})" title="Eliminar Socio">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
       </td>
     </tr>`;
   }).join("");
@@ -378,13 +395,24 @@ function pintarMiembros(miembros, consulta) {
 
 async function guardarMiembro(e) {
   e.preventDefault();
+  const telValor = document.getElementById("m-telefono").value.trim();
+
+  // Validación de número de teléfono a exactamente 10 dígitos si se proporciona
+  if (telValor && !/^\d{10}$/.test(telValor)) {
+    const errorCaja = document.getElementById("m-error");
+    errorCaja.textContent = "El número telefónico debe contener exactamente 10 dígitos numéricos.";
+    errorCaja.classList.remove("d-none");
+    document.getElementById("m-telefono").focus();
+    return;
+  }
+
   const datos = {
-    nombre: document.getElementById("m-nombre").value,
-    apellidos: document.getElementById("m-apellidos").value,
-    email: document.getElementById("m-email").value || null,
-    telefono: document.getElementById("m-telefono").value || null,
+    nombre: document.getElementById("m-nombre").value.trim(),
+    apellidos: document.getElementById("m-apellidos").value.trim(),
+    email: document.getElementById("m-email").value.trim() || null,
+    telefono: telValor || null,
     fecha_nacimiento: document.getElementById("m-nacimiento").value || null,
-    notas: document.getElementById("m-notas").value || null
+    notas: document.getElementById("m-notas").value.trim() || null
   };
   try {
     await apiFetch("/miembros/", "POST", datos);
@@ -398,6 +426,7 @@ async function guardarMiembro(e) {
 function eliminarMiembro(id) {
   eliminarRecurso("miembros", id, "¿Deseas eliminar este socio?", cargarMiembros);
 }
+
 
 // --- USUARIOS ---
 async function cargarUsuarios() {

@@ -58,18 +58,20 @@ def buscar_miembros(
 ) -> list[ResultadoBusqueda]:
     """Devuelve los socios que mas se parecen a `consulta`, de mejor a peor."""
     consulta = consulta.strip()
+    id_candidato = consulta.lstrip("#").strip()
 
     # Un numero es un id de socio, no un nombre: es lo que recepcion tiene a
     # mano en la lista de vencimientos y en el carnet. Se resuelve directo, en
     # vez de dejar que compita por parecido con nombres que no tienen nada que
     # ver, y antes del minimo de longitud: los primeros socios del gimnasio
     # tienen ids de un solo digito.
-    if consulta.isdigit():
-        miembro = session.get(Miembro, int(consulta))
+    if id_candidato.isdigit() and id_candidato:
+        miembro = session.get(Miembro, int(id_candidato))
         return [ResultadoBusqueda(miembro=miembro, puntaje=1.0)] if miembro else []
 
     if len(consulta) < LONGITUD_MINIMA:
         return []
+
 
     exigir_postgresql(session, "La busqueda de socios (pg_trgm)")
 

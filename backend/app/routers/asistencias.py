@@ -1,17 +1,26 @@
-"""Endpoints del registro de entradas al gimnasio."""
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from app.core.deps import get_current_user
-from app.schemas.asistencia import AsistenciaCreate, AsistenciaRead, AsistenciaUpdate
+from app.schemas.asistencia import (
+    AsistenciaCreate,
+    AsistenciaRead,
+    AsistenciaUpdate,
+    PaseDiaCreate,
+    PaseDiaRead,
+)
+from app.services.tiempo import hoy_local
 from gym_core.db import get_session
-from gym_core.models.usuario import Usuario
 from gym_core.models.asistencia import Asistencia
 from gym_core.models.miembro import Miembro
+from gym_core.models.plan import Plan
 from gym_core.models.suscripcion import Suscripcion
+from gym_core.models.usuario import Usuario
 
 router = APIRouter()
+
 
 
 def _verificar_referencias(
@@ -60,6 +69,77 @@ def registrar_asistencia(
     session.commit()
     session.refresh(asistencia)
     return asistencia
+
+
+@router.post("/pase-dia", response_model=PaseDiaRead, status_code=status.HTTP_201_CREATED)
+def registrar_pase_dia(
+    datos: PaseDiaCreate,
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_user),
+):
+    hoy = hoy_local()
+    monto_dec = Decimal(str(datos.monto))
+    nombre_limpio = (datos.nombre or "Visitante").strip()
+
+    # Buscar o crear plan de Pase del Dia
+    plan = session.exec(select(Plan).where(Plan.nombre == "Pase del Día")).first()
+    if not plan:
+        plan = session.exec(select(Plan).where(Plan.duracion_dias == 1)).first()
+    if not plan:
+        plan = Plan(
+            nombre="Pase del Día",
+            descripcion="Acceso por un día para visitantes",
+            duracion_dias=1,
+            precio=monto_dec,
+            activo=True,
+        )
+        session.add(plan)
+        session.commit()
+        session.refresh(plan)
+
+    # Crear miembro de visita
+    miembro = Miembro(
+        nombre=nombre_limpio,
+        apellidos="Visitante",
+        fecha_registro=hoy,
+        activo=True,
+        notas=datos.notas or "Pase del Día / Visita rápida",
+    )
+    session.add(miembro)
+    session.commit()
+    session.refresh(miembro)
+
+    # Crear suscripcion de 1 dia con el precio pagado
+    suscripcion = Suscripcion(
+        miembro_id=miembro.id,
+        plan_id=plan.id,
+        fecha_inicio=hoy,
+        fecha_fin=hoy,
+        precio_pagado=monto_dec,
+    )
+    session.add(suscripcion)
+    session.commit()
+    session.refresh(suscripcion)
+
+    # Registrar asistencia
+    asistencia = Asistencia(
+        miembro_id=miembro.id,
+        suscripcion_id=suscripcion.id,
+        usuario_id=usuario.id,
+    )
+    session.add(asistencia)
+    session.commit()
+    session.refresh(asistencia)
+
+    return PaseDiaRead(
+        asistencia_id=asistencia.id,
+        miembro_id=miembro.id,
+        suscripcion_id=suscripcion.id,
+        nombre_visitante=f"{miembro.nombre} {miembro.apellidos}",
+        monto_pagado=float(monto_dec),
+        registrada_en=asistencia.registrada_en,
+    )
+
 
 
 @router.put("/{asistencia_id}", response_model=AsistenciaRead)
