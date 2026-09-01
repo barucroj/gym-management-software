@@ -44,3 +44,23 @@ class AsistenciaRead(BaseModel):
     suscripcion_id: int | None
     # Quien lo registro. None en las asistencias anteriores a esta columna.
     usuario_id: int | None
+
+
+class PaseDiaCreate(BaseModel):
+    """Cobro y registro rapido de pase del dia / visita."""
+
+    nombre: str = "Visitante"
+    monto: float = 50.0
+    notas: str | None = None
+
+
+class PaseDiaRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    asistencia_id: int
+    miembro_id: int
+    suscripcion_id: int
+    nombre_visitante: str
+    monto_pagado: float
+    registrada_en: datetime
+
