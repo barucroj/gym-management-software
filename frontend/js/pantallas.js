@@ -292,22 +292,36 @@ function pintarSuscripciones() {
   const tbody = document.getElementById("tabla-suscripciones");
   const filtro = document.getElementById("filtro-estatus").value;
 
-  const filas = filtro
-    ? catalogo.suscripciones.filter(s => s.estatus === filtro)
-    : catalogo.suscripciones;
+  // Agrupar por miembro: quedarse con la suscripcion de fecha_fin más reciente.
+  const porMiembro = new Map();
+  for (const s of catalogo.suscripciones) {
+    const actual = porMiembro.get(s.miembro_id);
+    if (!actual || s.fecha_fin > actual.fecha_fin) {
+      porMiembro.set(s.miembro_id, s);
+    }
+  }
+
+  let filas = [...porMiembro.values()];
+  if (filtro) filas = filas.filter(s => s.estatus === filtro);
 
   if (filas.length === 0) {
     vacio(tbody, 6, filtro ? "No hay suscripciones con ese estatus." : "Todavía no hay suscripciones.");
     return;
   }
 
+  // Ordenar: activas primero, luego por_vencer, luego vencidas
+  const orden = { activa: 0, por_vencer: 1, vencida: 2, cancelada: 3, inactiva: 4 };
+  filas.sort((a, b) => (orden[a.estatus] ?? 9) - (orden[b.estatus] ?? 9));
+
   tbody.innerHTML = filas.map(s => `
     <tr>
-      <td class="d-flex align-items-center">
-        ${avatar(nombreMiembro(s.miembro_id))}
-        <div>
-          <div class="fw-bold">${esc(nombreMiembro(s.miembro_id))}</div>
-          <div class="text-muted small font-monospace">${idSocio(s.miembro_id)}</div>
+      <td>
+        <div class="d-flex align-items-center">
+          ${avatar(nombreMiembro(s.miembro_id))}
+          <div>
+            <div class="fw-bold">${esc(nombreMiembro(s.miembro_id))}</div>
+            <div class="text-muted small font-monospace">${idSocio(s.miembro_id)}</div>
+          </div>
         </div>
       </td>
       <td>${esc(nombrePlan(s.plan_id))}</td>
@@ -316,12 +330,16 @@ function pintarSuscripciones() {
       <td>$${esc(s.precio_pagado)}</td>
       <td>
         <div class="btn-group btn-group-sm">
-          <button class="btn btn-outline-success" onclick="renovarSuscripcion(${s.id})" title="Renovar Suscripción">
+          <button class="btn btn-outline-primary" onclick="editarSuscripcion(${s.id})" title="Modificar Suscripción">
+            <i class="bi bi-pencil-square"></i>
+          </button>
+          <button class="btn btn-outline-success" onclick="renovarSuscripcion(${s.id})" title="Renovar / Cambiar Plan">
             <i class="bi bi-arrow-repeat"></i> Renovar
           </button>
-          <button class="btn btn-outline-danger" onclick="eliminarSuscripcion(${s.id})" title="Desasignar / Eliminar Suscripción">
-            <i class="bi bi-person-x"></i> Desasignar
-          </button>
+          ${s.estatus !== "vencida" ? `
+          <button class="btn btn-outline-danger" onclick="eliminarSuscripcion(${s.id})" title="Desasignar / Cancelar Suscripción">
+            <i class="bi bi-person-x"></i> Cancelar
+          </button>` : ""}
         </div>
       </td>
     </tr>
@@ -346,34 +364,57 @@ function prepararFormularioSuscripcion() {
 }
 
 /**
- * Propone fecha de fin y precio segun el plan y el socio elegido.
+ * Propone fecha de inicio, fin y precio segun el plan y el socio elegido.
  *
- * LÓGICA DE RENOVACIÓN ACUMULATIVA:
- * Si el socio tiene una suscripcion activa con dias restantes (fecha_fin >= hoy),
- * el nuevo periodo se acumula a partir de su vencimiento actual (fecha_fin)
- * en lugar de empezar hoy.
+ * LÓGICA DE RENOVACIÓN:
+ * - Si la suscripción está VENCIDA, sugiere iniciar desde la fecha de HOY.
+ * - Si está ACTIVA, añade únicamente 1 periodo adicional (ej. 30 días)
+ *   a partir de su fecha de vencimiento actual.
+ * - Evita saltos a años futuros (2029) previniendo encadenamiento descontrolado.
  */
-function proponerVigencia() {
+function proponerVigencia(suscripcionBase = null) {
   const miembroId = Number(document.getElementById("s-miembro").value);
-  const plan = catalogo.planes.find(p => p.id === Number(document.getElementById("s-plan").value));
+  const planId = Number(document.getElementById("s-plan").value);
+  const plan = catalogo.planes.find(p => p.id === planId);
   const aviso = document.getElementById("s-aviso-renovacion");
   const hiddenRenovada = document.getElementById("s-renovada-de-id");
 
   if (!plan) return;
 
   const hoyStr = new Date().toISOString().slice(0, 10);
-  const vigente = miembroId ? vigenciaDe(miembroId) : null;
+
+  // Obtener la suscripción base sobre la cual renovar
+  let target = suscripcionBase;
+  if (!target && miembroId) {
+    target = catalogo.suscripciones
+      .filter(s => s.miembro_id === miembroId)
+      .sort((a, b) => b.fecha_fin.localeCompare(a.fecha_fin))[0] || null;
+  }
 
   let fechaInicioPropuesta = hoyStr;
   let esRenovacionActiva = false;
 
-  if (vigente && vigente.fecha_fin >= hoyStr) {
-    // Si aún tiene vigencia, sumamos el nuevo periodo a partir de su vencimiento
-    fechaInicioPropuesta = vigente.fecha_fin;
-    esRenovacionActiva = true;
-    if (hiddenRenovada) hiddenRenovada.value = String(vigente.id);
+  if (target && target.estatus !== "vencida" && target.fecha_fin >= hoyStr) {
+    // Si la suscripción está ACTIVA, añade únicamente 1 periodo adicional
+    // a partir de su fecha de vencimiento actual.
+    const fechaVenc = new Date(`${target.fecha_fin}T00:00:00`);
+
+    // Evitar propagación de fechas corruptas de pruebas previas (> 1 año en el futuro)
+    const maxFuturo = new Date();
+    maxFuturo.setFullYear(maxFuturo.getFullYear() + 1);
+    if (fechaVenc > maxFuturo) {
+      fechaInicioPropuesta = hoyStr;
+      esRenovacionActiva = false;
+    } else {
+      fechaVenc.setDate(fechaVenc.getDate() + 1);
+      fechaInicioPropuesta = fechaVenc.toISOString().slice(0, 10);
+      esRenovacionActiva = true;
+    }
+    if (hiddenRenovada) hiddenRenovada.value = String(target.id);
   } else {
-    if (hiddenRenovada) hiddenRenovada.value = "";
+    // Si la suscripción está VENCIDA o no existe, sugiere iniciar desde la fecha de HOY
+    fechaInicioPropuesta = hoyStr;
+    if (hiddenRenovada) hiddenRenovada.value = target ? String(target.id) : "";
   }
 
   document.getElementById("s-inicio").value = fechaInicioPropuesta;
@@ -386,8 +427,8 @@ function proponerVigencia() {
   document.getElementById("s-precio").value = plan.precio;
 
   if (aviso) {
-    if (esRenovacionActiva) {
-      aviso.innerHTML = `<i class="bi bi-arrow-repeat me-1"></i> <strong>Renovación continua:</strong> El socio tiene vigencia activa hasta el ${fecha(vigente.fecha_fin)}. El nuevo periodo de ${plan.duracion_dias} días se acumula hasta el <strong>${fecha(fechaFinCalculada)}</strong>.`;
+    if (esRenovacionActiva && target) {
+      aviso.innerHTML = `<i class="bi bi-arrow-repeat me-1"></i> <strong>Renovación de suscripción activa:</strong> Vigente hasta ${fecha(target.fecha_fin)}. Se añade 1 periodo del <strong>${fecha(fechaInicioPropuesta)}</strong> al <strong>${fecha(fechaFinCalculada)}</strong> (${plan.duracion_dias} días).`;
       aviso.classList.remove("d-none");
     } else {
       aviso.classList.add("d-none");
@@ -395,8 +436,23 @@ function proponerVigencia() {
   }
 }
 
+function recalcularFechaFin() {
+  const planId = Number(document.getElementById("s-plan").value);
+  const plan = catalogo.planes.find(p => p.id === planId);
+  const inicioStr = document.getElementById("s-inicio").value;
+  if (!plan || !inicioStr) return;
+
+  const fin = new Date(`${inicioStr}T00:00:00`);
+  fin.setDate(fin.getDate() + plan.duracion_dias);
+  document.getElementById("s-fin").value = fin.toISOString().slice(0, 10);
+}
+
 function abrirModalAsignar() {
   prepararFormularioSuscripcion();
+  const idEl = document.getElementById("s-id");
+  if (idEl) idEl.value = "";
+  const renovadaEl = document.getElementById("s-renovada-de-id");
+  if (renovadaEl) renovadaEl.value = "";
   proponerVigencia();
   document.getElementById("modalSuscripcionTitulo").innerHTML = '<i class="bi bi-card-checklist me-2 text-primary"></i>Asignar Plan a Socio';
   document.getElementById("s-boton-submit").textContent = "Asignar Suscripción";
@@ -405,6 +461,10 @@ function abrirModalAsignar() {
 
 function abrirAsignarSuscripcionParaMiembro(miembroId) {
   prepararFormularioSuscripcion();
+  const idEl = document.getElementById("s-id");
+  if (idEl) idEl.value = "";
+  const renovadaEl = document.getElementById("s-renovada-de-id");
+  if (renovadaEl) renovadaEl.value = "";
   document.getElementById("s-miembro").value = String(miembroId);
   proponerVigencia();
   document.getElementById("modalSuscripcionTitulo").innerHTML = '<i class="bi bi-card-checklist me-2 text-primary"></i>Asignar / Renovar Plan';
@@ -414,6 +474,10 @@ function abrirAsignarSuscripcionParaMiembro(miembroId) {
 
 function asignarPlan(planId) {
   prepararFormularioSuscripcion();
+  const idEl = document.getElementById("s-id");
+  if (idEl) idEl.value = "";
+  const renovadaEl = document.getElementById("s-renovada-de-id");
+  if (renovadaEl) renovadaEl.value = "";
   document.getElementById("s-plan").value = String(planId);
   proponerVigencia();
   document.getElementById("modalSuscripcionTitulo").innerHTML = '<i class="bi bi-card-checklist me-2 text-primary"></i>Asignar Plan a Socio';
@@ -426,16 +490,45 @@ function renovarSuscripcion(suscripcionId) {
   if (!suscripcion) return;
 
   prepararFormularioSuscripcion();
+  const idEl = document.getElementById("s-id");
+  if (idEl) idEl.value = "";
+  const renovadaEl = document.getElementById("s-renovada-de-id");
+  if (renovadaEl) renovadaEl.value = String(suscripcion.id);
   document.getElementById("s-miembro").value = String(suscripcion.miembro_id);
   document.getElementById("s-plan").value = String(suscripcion.plan_id);
-  proponerVigencia();
+  proponerVigencia(suscripcion);
   document.getElementById("modalSuscripcionTitulo").innerHTML = '<i class="bi bi-arrow-repeat me-2 text-success"></i>Renovar Suscripción de Socio';
   document.getElementById("s-boton-submit").textContent = "Confirmar Renovación";
   new bootstrap.Modal(document.getElementById("modalSuscripcion")).show();
 }
 
+function editarSuscripcion(suscripcionId) {
+  const suscripcion = catalogo.suscripciones.find(s => s.id === suscripcionId);
+  if (!suscripcion) return;
+
+  prepararFormularioSuscripcion();
+  const idEl = document.getElementById("s-id");
+  if (idEl) idEl.value = String(suscripcion.id);
+  const renovadaEl = document.getElementById("s-renovada-de-id");
+  if (renovadaEl) renovadaEl.value = suscripcion.renovada_de_id ? String(suscripcion.renovada_de_id) : "";
+
+  document.getElementById("s-miembro").value = String(suscripcion.miembro_id);
+  document.getElementById("s-plan").value = String(suscripcion.plan_id);
+  document.getElementById("s-inicio").value = suscripcion.fecha_inicio;
+  document.getElementById("s-fin").value = suscripcion.fecha_fin;
+  document.getElementById("s-precio").value = suscripcion.precio_pagado;
+
+  const aviso = document.getElementById("s-aviso-renovacion");
+  if (aviso) aviso.classList.add("d-none");
+
+  document.getElementById("modalSuscripcionTitulo").innerHTML = '<i class="bi bi-pencil-square me-2 text-primary"></i>Modificar Suscripción';
+  document.getElementById("s-boton-submit").textContent = "Guardar Cambios";
+  new bootstrap.Modal(document.getElementById("modalSuscripcion")).show();
+}
+
 async function guardarSuscripcion(e) {
   e.preventDefault();
+  const suscripcionId = document.getElementById("s-id")?.value;
   const renovadaDeId = document.getElementById("s-renovada-de-id")?.value;
 
   const datos = {
@@ -447,20 +540,60 @@ async function guardarSuscripcion(e) {
     renovada_de_id: renovadaDeId ? Number(renovadaDeId) : null
   };
   try {
-    await apiFetch("/suscripciones/", "POST", datos);
+    if (suscripcionId) {
+      await apiFetch(`/suscripciones/${suscripcionId}`, "PUT", datos);
+    } else {
+      await apiFetch("/suscripciones/", "POST", datos);
+    }
     cerrarModal("modalSuscripcion", "form-suscripcion", "s-error");
-    cargarSuscripciones();
+    await cargarCatalogos();
+    pintarSuscripciones();
   } catch (err) {
     mostrarErrorEnFormulario("s-error", err);
   }
 }
 
-function eliminarSuscripcion(id) {
-  eliminarRecurso("suscripciones", id, "¿Deseas desasignar / eliminar esta suscripción del socio?", cargarSuscripciones);
+async function eliminarSuscripcion(id) {
+  const suscripcion = catalogo.suscripciones.find(s => s.id === id);
+  const esActiva = suscripcion && suscripcion.estatus !== "vencida";
+  const mensaje = esActiva
+    ? "¿Deseas desasignar / cancelar esta suscripción activa? Su vigencia terminará inmediatamente y el socio quedará libre para asignar un nuevo plan."
+    : "¿Deseas eliminar este registro de suscripción?";
+
+  if (!confirm(mensaje)) return;
+
+  try {
+    if (esActiva) {
+      await apiFetch(`/suscripciones/${id}/cancelar`, "POST");
+    } else {
+      try {
+        await apiFetch(`/suscripciones/${id}`, "DELETE");
+      } catch (errDelete) {
+        await apiFetch(`/suscripciones/${id}/cancelar`, "POST");
+      }
+    }
+    await cargarCatalogos();
+    pintarSuscripciones();
+  } catch (err) {
+    if (err instanceof ErrorNoAutenticado) return salir();
+    alert(err.message);
+  }
 }
 
 // --- RECEPCION / CHECK-IN Y BUSQUEDA DINAMICA ---
 let temporizadorCheckin = null;
+
+async function actualizarEstadisticasPaseDia() {
+  try {
+    const data = await apiFetch("/asistencias/pase-dia/resumen-hoy");
+    const elConteo = document.getElementById("stat-pases-dia-conteo");
+    const elGanancias = document.getElementById("stat-pases-dia-ganancias");
+    if (elConteo) elConteo.textContent = data.total_visitas;
+    if (elGanancias) elGanancias.textContent = `$${Number(data.total_recaudado).toFixed(2)}`;
+  } catch (err) {
+    console.warn("No se pudo cargar el resumen de pases del día:", err);
+  }
+}
 
 async function prepararCheckin() {
   document.getElementById("checkin-resultado").innerHTML = "";
@@ -474,6 +607,7 @@ async function prepararCheckin() {
     inputCheckin.value = "";
     inputCheckin.focus();
   }
+  actualizarEstadisticasPaseDia();
   try {
     await cargarCatalogos();
   } catch (err) {
@@ -509,8 +643,8 @@ function alEscribirCheckin() {
       cajaSugerencias.innerHTML = `
         <div class="list-group">
           ${encontrados.map(m => {
-            const vigente = vigenciaDe(m.id);
-            return `
+        const vigente = vigenciaDe(m.id);
+        return `
             <button type="button" class="list-group-item list-group-item-action bg-dark text-white border-secondary d-flex justify-content-between align-items-center py-2" onclick="seleccionarYValidarSocio(${m.id})">
               <div class="d-flex align-items-center">
                 ${avatar(m.nombre_completo)}
@@ -524,7 +658,7 @@ function alEscribirCheckin() {
                 <span class="btn btn-sm btn-primary ms-2"><i class="bi bi-qr-code"></i> Validar</span>
               </div>
             </button>`;
-          }).join("")}
+      }).join("")}
         </div>
       `;
       cajaSugerencias.classList.remove("d-none");
@@ -691,6 +825,7 @@ async function registrarPaseDia(e) {
     );
 
     await cargarCatalogos();
+    await actualizarEstadisticasPaseDia();
   } catch (err) {
     mostrarErrorEnFormulario("pd-error", err);
   }

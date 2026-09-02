@@ -1,9 +1,12 @@
 """Endpoints de las suscripciones (la vigencia que un miembro compra)."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import date, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
 from app.schemas.suscripcion import SuscripcionCreate, SuscripcionRead, SuscripcionUpdate
+from app.services.tiempo import hoy_local
 from gym_core.db import get_session
 from gym_core.models.asistencia import Asistencia
 from gym_core.models.miembro import Miembro
@@ -32,8 +35,27 @@ def _verificar_referencias(session: Session, miembro_id: int | None, plan_id: in
 
 
 @router.get("/", response_model=list[SuscripcionRead])
-def listar_suscripciones(session: Session = Depends(get_session)):
-    return [SuscripcionRead.desde(s) for s in session.exec(select(Suscripcion)).all()]
+def listar_suscripciones(
+    session: Session = Depends(get_session),
+    solo_recientes: bool = Query(
+        default=True,
+        description="Si es True, agrupa por socio y devuelve solo la suscripcion más reciente de cada uno eliminando duplicados.",
+    ),
+):
+    # Ordenar por fecha_fin desc e id desc para priorizar la vigencia más reciente
+    query = select(Suscripcion).order_by(Suscripcion.fecha_fin.desc(), Suscripcion.id.desc())
+    registros = session.exec(query).all()
+    if not solo_recientes:
+        return [SuscripcionRead.desde(s) for s in registros]
+
+    vistos: set[int] = set()
+    unicas: list[Suscripcion] = []
+    for s in registros:
+        if s.miembro_id not in vistos:
+            vistos.add(s.miembro_id)
+            unicas.append(s)
+
+    return [SuscripcionRead.desde(s) for s in unicas]
 
 
 @router.get("/{suscripcion_id}", response_model=SuscripcionRead)
@@ -122,6 +144,23 @@ def actualizar_suscripcion(
     session.commit()
     session.refresh(suscripcion)
     return SuscripcionRead.desde(suscripcion)
+
+
+@router.post("/{suscripcion_id}/cancelar")
+@router.post("/{suscripcion_id}/cancelar/")
+@router.put("/{suscripcion_id}/cancelar")
+@router.put("/{suscripcion_id}/cancelar/")
+def cancelar_suscripcion(suscripcion_id: int, session: Session = Depends(get_session)):
+    suscripcion = session.get(Suscripcion, suscripcion_id)
+    if not suscripcion:
+        raise HTTPException(status_code=404, detail="Suscripción no encontrada")
+    
+    # Cambia la fecha de fin a ayer para que el sistema la tome como vencida de inmediato
+    suscripcion.fecha_fin = date.today() - timedelta(days=1)
+    session.add(suscripcion)
+    session.commit()
+    session.refresh(suscripcion)
+    return {"status": "ok", "mensaje": "Suscripción cancelada", "estatus": "vencida"}
 
 
 @router.delete("/{suscripcion_id}", status_code=status.HTTP_204_NO_CONTENT)

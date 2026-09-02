@@ -10,6 +10,7 @@ from app.schemas.asistencia import (
     AsistenciaUpdate,
     PaseDiaCreate,
     PaseDiaRead,
+    PaseDiaResumenHoy,
 )
 from app.services.tiempo import hoy_local
 from gym_core.db import get_session
@@ -38,40 +39,10 @@ def _verificar_referencias(
         )
 
 
-@router.get("/", response_model=list[AsistenciaRead])
-def listar_asistencias(session: Session = Depends(get_session)):
-    return session.exec(select(Asistencia)).all()
-
-
-@router.get("/{asistencia_id}", response_model=AsistenciaRead)
-def obtener_asistencia(asistencia_id: int, session: Session = Depends(get_session)):
-    asistencia = session.get(Asistencia, asistencia_id)
-    if not asistencia:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Asistencia no encontrada"
-        )
-    return asistencia
-
-
-@router.post("/", response_model=AsistenciaRead, status_code=status.HTTP_201_CREATED)
-def registrar_asistencia(
-    datos: AsistenciaCreate,
-    session: Session = Depends(get_session),
-    usuario: Usuario = Depends(get_current_user),
-):
-    _verificar_referencias(session, datos.miembro_id, datos.suscripcion_id)
-
-    # Ni registrada_en ni usuario_id se toman del cliente: la hora la pone el
-    # modelo con la del servidor y el autor sale del token que ya viajaba en la
-    # peticion. Es lo unico que hace del registro una prueba de algo.
-    asistencia = Asistencia(**datos.model_dump(), usuario_id=usuario.id)
-    session.add(asistencia)
-    session.commit()
-    session.refresh(asistencia)
-    return asistencia
-
-
+# IMPORTANTE: /pase-dia debe declararse ANTES de /{asistencia_id} y de / para que
+# FastAPI no intente parsear la cadena "pase-dia" como un entero ni colisione con rutas.
 @router.post("/pase-dia", response_model=PaseDiaRead, status_code=status.HTTP_201_CREATED)
+@router.post("/pase-dia/", response_model=PaseDiaRead, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 def registrar_pase_dia(
     datos: PaseDiaCreate,
     session: Session = Depends(get_session),
@@ -140,6 +111,63 @@ def registrar_pase_dia(
         registrada_en=asistencia.registrada_en,
     )
 
+
+@router.get("/pase-dia/resumen-hoy", response_model=PaseDiaResumenHoy)
+@router.get("/pase-dia/resumen-hoy/", response_model=PaseDiaResumenHoy, include_in_schema=False)
+def resumen_pase_dia_hoy(session: Session = Depends(get_session)):
+    hoy = hoy_local()
+    # Buscar planes asociados a Pase del Día (nombre o duración de 1 día)
+    plan_ids = session.exec(
+        select(Plan.id).where((Plan.nombre == "Pase del Día") | (Plan.duracion_dias == 1))
+    ).all()
+    if not plan_ids:
+        return PaseDiaResumenHoy(total_visitas=0, total_recaudado=0.0)
+
+    # Buscar suscripciones de hoy asociadas a esos planes
+    suscripciones_hoy = session.exec(
+        select(Suscripcion).where(
+            Suscripcion.plan_id.in_(plan_ids),
+            Suscripcion.fecha_inicio == hoy,
+        )
+    ).all()
+
+    total_visitas = len(suscripciones_hoy)
+    total_recaudado = float(sum((s.precio_pagado for s in suscripciones_hoy), Decimal("0.00")))
+    return PaseDiaResumenHoy(total_visitas=total_visitas, total_recaudado=total_recaudado)
+
+
+@router.get("/", response_model=list[AsistenciaRead])
+def listar_asistencias(session: Session = Depends(get_session)):
+    return session.exec(select(Asistencia)).all()
+
+
+@router.post("/", response_model=AsistenciaRead, status_code=status.HTTP_201_CREATED)
+def registrar_asistencia(
+    datos: AsistenciaCreate,
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_user),
+):
+    _verificar_referencias(session, datos.miembro_id, datos.suscripcion_id)
+
+    # Ni registrada_en ni usuario_id se toman del cliente: la hora la pone el
+    # modelo con la del servidor y el autor sale del token que ya viajaba en la
+    # peticion. Es lo unico que hace del registro una prueba de algo.
+    asistencia = Asistencia(**datos.model_dump(), usuario_id=usuario.id)
+    session.add(asistencia)
+    session.commit()
+    session.refresh(asistencia)
+    return asistencia
+
+
+
+@router.get("/{asistencia_id}", response_model=AsistenciaRead)
+def obtener_asistencia(asistencia_id: int, session: Session = Depends(get_session)):
+    asistencia = session.get(Asistencia, asistencia_id)
+    if not asistencia:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Asistencia no encontrada"
+        )
+    return asistencia
 
 
 @router.put("/{asistencia_id}", response_model=AsistenciaRead)

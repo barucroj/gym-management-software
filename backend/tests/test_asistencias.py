@@ -142,3 +142,34 @@ def test_el_cliente_no_puede_atribuir_la_entrada_a_otro(
 
     assert respuesta.status_code == 201
     assert respuesta.json()["usuario_id"] != 999
+
+
+def test_registro_pase_dia(client_recepcion: TestClient) -> None:
+    # Probar endpoint sin diagonal final
+    resp1 = client_recepcion.post(
+        "/api/v1/asistencias/pase-dia",
+        json={"nombre": "Pedro Pascal", "monto": 60.0, "notas": "Visita prueba"},
+    )
+    assert resp1.status_code == 201
+    data1 = resp1.json()
+    assert "Pedro Pascal" in data1["nombre_visitante"]
+    assert data1["monto_pagado"] == 60.0
+    assert "asistencia_id" in data1
+    assert "suscripcion_id" in data1
+
+    # Probar endpoint con diagonal final
+    resp2 = client_recepcion.post(
+        "/api/v1/asistencias/pase-dia/",
+        json={"nombre": "Laura Pausini", "monto": 50.0},
+    )
+    assert resp2.status_code == 201
+    assert "Laura Pausini" in resp2.json()["nombre_visitante"]
+
+    # Probar resumen de pase del día de hoy
+    resp_resumen = client_recepcion.get("/api/v1/asistencias/pase-dia/resumen-hoy")
+    assert resp_resumen.status_code == 200
+    resumen_data = resp_resumen.json()
+    assert resumen_data["total_visitas"] >= 2
+    assert resumen_data["total_recaudado"] >= 110.0
+
+

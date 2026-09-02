@@ -25,7 +25,7 @@ async function iniciar() {
   // Al cambiar socio, plan o fecha de inicio se recalcula la vigencia y acumulacion.
   document.getElementById("s-miembro")?.addEventListener("change", proponerVigencia);
   document.getElementById("s-plan")?.addEventListener("change", proponerVigencia);
-  document.getElementById("s-inicio")?.addEventListener("change", proponerVigencia);
+  document.getElementById("s-inicio")?.addEventListener("change", recalcularFechaFin);
 
   // Restriccion estricta de teléfono a solo números de 10 dígitos
   document.getElementById("m-telefono")?.addEventListener("input", function() {
@@ -165,7 +165,9 @@ function badgeEstado(activo) {
 const ETIQUETA_ESTATUS = {
   activa: { texto: "Activa", clase: "bg-success bg-opacity-10 text-success" },
   por_vencer: { texto: "Por vencer", clase: "bg-warning bg-opacity-10 text-warning" },
-  vencida: { texto: "Vencida", clase: "bg-danger bg-opacity-10 text-danger" }
+  vencida: { texto: "Vencida", clase: "bg-danger bg-opacity-10 text-danger" },
+  cancelada: { texto: "Cancelada", clase: "bg-secondary bg-opacity-10 text-secondary" },
+  inactiva: { texto: "Inactiva", clase: "bg-secondary bg-opacity-10 text-secondary" }
 };
 
 function badgeEstatus(estatus) {
@@ -362,11 +364,13 @@ function pintarMiembros(miembros, consulta) {
     const vigente = vigenciaDe(m.id);
     return `
     <tr>
-      <td class="d-flex align-items-center">
-        ${avatar(m.nombre_completo)}
-        <div>
-          <div class="fw-bold">${esc(m.nombre_completo)}</div>
-          <div class="text-muted small font-monospace">${idSocio(m.id)}</div>
+      <td>
+        <div class="d-flex align-items-center">
+          ${avatar(m.nombre_completo)}
+          <div>
+            <div class="fw-bold">${esc(m.nombre_completo)}</div>
+            <div class="text-muted small font-monospace">${idSocio(m.id)}</div>
+          </div>
         </div>
       </td>
       <td>
@@ -375,14 +379,14 @@ function pintarMiembros(miembros, consulta) {
       </td>
       <td>
         ${vigente
-          ? `${badgeEstatus(vigente.estatus)}<div class="text-muted small mt-1">hasta ${fecha(vigente.fecha_fin)}</div>`
+          ? `${badgeEstatus(vigente.estatus)}<div class="text-muted small mt-1">${esc(nombrePlan(vigente.plan_id))} · hasta ${fecha(vigente.fecha_fin)}</div>`
           : '<span class="text-muted small">sin suscripción</span>'}
       </td>
       <td>${badgeEstado(m.activo)}</td>
       <td>
         <div class="btn-group btn-group-sm">
-          <button class="btn btn-outline-primary" onclick="abrirAsignarSuscripcionParaMiembro(${m.id})" title="Asignar o Renovar Plan">
-            <i class="bi bi-card-checklist"></i> Plan
+          <button class="btn btn-outline-secondary" onclick="abrirEditarMiembro(${m.id})" title="Editar Perfil de Socio">
+            <i class="bi bi-pencil-square"></i>
           </button>
           <button class="btn btn-outline-danger" onclick="eliminarMiembro(${m.id})" title="Eliminar Socio">
             <i class="bi bi-trash"></i>
@@ -393,8 +397,37 @@ function pintarMiembros(miembros, consulta) {
   }).join("");
 }
 
+function abrirNuevoMiembro() {
+  document.getElementById("form-miembro").reset();
+  document.getElementById("m-id").value = "";
+  document.getElementById("modalMiembroTitulo").innerHTML = '<i class="bi bi-person-plus-fill me-2 text-primary"></i>Registrar Nuevo Miembro';
+  document.getElementById("m-boton-submit").textContent = "Guardar Socio";
+  document.getElementById("m-error").classList.add("d-none");
+  new bootstrap.Modal(document.getElementById("modalNuevoMiembro")).show();
+}
+
+function abrirEditarMiembro(id) {
+  const m = catalogo.miembros.find(socio => socio.id === id);
+  if (!m) return;
+
+  document.getElementById("form-miembro").reset();
+  document.getElementById("m-id").value = m.id;
+  document.getElementById("m-nombre").value = m.nombre || "";
+  document.getElementById("m-apellidos").value = m.apellidos || "";
+  document.getElementById("m-email").value = m.email || "";
+  document.getElementById("m-telefono").value = m.telefono || "";
+  document.getElementById("m-nacimiento").value = m.fecha_nacimiento || "";
+  document.getElementById("m-notas").value = m.notas || "";
+
+  document.getElementById("modalMiembroTitulo").innerHTML = '<i class="bi bi-pencil-square me-2 text-primary"></i>Editar Perfil de Socio';
+  document.getElementById("m-boton-submit").textContent = "Actualizar Socio";
+  document.getElementById("m-error").classList.add("d-none");
+  new bootstrap.Modal(document.getElementById("modalNuevoMiembro")).show();
+}
+
 async function guardarMiembro(e) {
   e.preventDefault();
+  const miembroId = document.getElementById("m-id").value;
   const telValor = document.getElementById("m-telefono").value.trim();
 
   // Validación de número de teléfono a exactamente 10 dígitos si se proporciona
@@ -415,8 +448,13 @@ async function guardarMiembro(e) {
     notas: document.getElementById("m-notas").value.trim() || null
   };
   try {
-    await apiFetch("/miembros/", "POST", datos);
+    if (miembroId) {
+      await apiFetch(`/miembros/${miembroId}`, "PUT", datos);
+    } else {
+      await apiFetch("/miembros/", "POST", datos);
+    }
     cerrarModal("modalNuevoMiembro", "form-miembro", "m-error");
+    await cargarCatalogos();
     cargarMiembros();
   } catch (err) {
     mostrarErrorEnFormulario("m-error", err);
@@ -436,9 +474,11 @@ async function cargarUsuarios() {
     const usuarios = await apiFetch("/usuarios/");
     tbody.innerHTML = usuarios.map(u => `
       <tr>
-        <td class="d-flex align-items-center">
-          ${avatar(u.nombre)}
-          <span class="fw-bold">${esc(u.nombre)}</span>
+        <td>
+          <div class="d-flex align-items-center">
+            ${avatar(u.nombre)}
+            <span class="fw-bold">${esc(u.nombre)}</span>
+          </div>
         </td>
         <td>${esc(u.email)}</td>
         <td>${u.rol === "admin" ? "Administrador" : "Recepción"}</td>

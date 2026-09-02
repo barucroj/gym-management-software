@@ -192,3 +192,66 @@ def test_una_suscripcion_no_se_renueva_dos_veces(
     respuesta = _renovar(client_recepcion, anterior, miembro_id, plan_id)
 
     assert respuesta.status_code == 409
+
+
+def test_cancelar_suscripcion_put_y_post(client_recepcion: TestClient, miembro_y_plan) -> None:
+    creada = client_recepcion.post("/api/v1/suscripciones/", json=_alta(*miembro_y_plan, dias=30)).json()
+    assert creada["estatus"] == "activa"
+
+    # Cancelar via PUT sin y con slash
+    resp_put = client_recepcion.put(f"/api/v1/suscripciones/{creada['id']}/cancelar")
+    assert resp_put.status_code == 200
+    assert resp_put.json()["status"] == "ok"
+    assert resp_put.json()["estatus"] == "vencida"
+
+    resp_put_slash = client_recepcion.put(f"/api/v1/suscripciones/{creada['id']}/cancelar/")
+    assert resp_put_slash.status_code == 200
+
+    # Segunda suscripción para probar POST sin y con slash
+    creada2 = client_recepcion.post("/api/v1/suscripciones/", json=_alta(*miembro_y_plan, dias=15)).json()
+    assert creada2["estatus"] == "activa"
+    resp_post = client_recepcion.post(f"/api/v1/suscripciones/{creada2['id']}/cancelar")
+    assert resp_post.status_code == 200
+    assert resp_post.json()["status"] == "ok"
+    assert resp_post.json()["estatus"] == "vencida"
+
+    resp_post_slash = client_recepcion.post(f"/api/v1/suscripciones/{creada2['id']}/cancelar/")
+    assert resp_post_slash.status_code == 200
+
+
+def test_listar_suscripciones_deduplica_por_socio(client_recepcion: TestClient, miembro_y_plan) -> None:
+    miembro_id, plan_id = miembro_y_plan
+    # Crear 2 suscripciones para el mismo socio
+    s1 = client_recepcion.post(
+        "/api/v1/suscripciones/",
+        json={
+            "miembro_id": miembro_id,
+            "plan_id": plan_id,
+            "fecha_inicio": (HOY - timedelta(days=60)).isoformat(),
+            "fecha_fin": (HOY - timedelta(days=30)).isoformat(),
+            "precio_pagado": "450.00",
+        },
+    ).json()
+
+    s2 = client_recepcion.post(
+        "/api/v1/suscripciones/",
+        json={
+            "miembro_id": miembro_id,
+            "plan_id": plan_id,
+            "fecha_inicio": HOY.isoformat(),
+            "fecha_fin": (HOY + timedelta(days=30)).isoformat(),
+            "precio_pagado": "450.00",
+        },
+    ).json()
+
+    # Por defecto, devuelve solo la más reciente por socio
+    lista_recientes = client_recepcion.get("/api/v1/suscripciones/").json()
+    suscripciones_socio = [s for s in lista_recientes if s["miembro_id"] == miembro_id]
+    assert len(suscripciones_socio) == 1
+    assert suscripciones_socio[0]["id"] == s2["id"]
+
+    # Si se pide todo el historial, devuelve ambas
+    lista_todas = client_recepcion.get("/api/v1/suscripciones/?solo_recientes=false").json()
+    suscripciones_todas = [s for s in lista_todas if s["miembro_id"] == miembro_id]
+    assert len(suscripciones_todas) == 2
+

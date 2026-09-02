@@ -64,3 +64,9 @@ class PaseDiaRead(BaseModel):
     monto_pagado: float
     registrada_en: datetime
 
+
+class PaseDiaResumenHoy(BaseModel):
+    total_visitas: int
+    total_recaudado: float
+
+
